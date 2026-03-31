@@ -1,0 +1,257 @@
+{
+  "gridSize": {
+    "x": 5,
+    "y": 5,
+    "z": 5
+  },
+  "arrows": [
+    {
+      "id": "8539f75c-1320-44f9-ac81-cca16a3ca0ab",
+      "path": [
+        77,
+        82,
+        81,
+        80
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "269dc6bd-a508-4006-86cd-a5d6e08b284a",
+      "path": [
+        58,
+        57,
+        62,
+        64
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "735349a9-b6fe-455f-8f58-91abffeeee77",
+      "path": [
+        1,
+        26,
+        27,
+        2
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "75fc66dc-5023-4ec9-ab06-e35c0ee746a6",
+      "path": [
+        89,
+        90,
+        91,
+        96
+      ],
+      "headEnd": "end"
+    },
+    {
+      "id": "a8730d44-fb44-4de3-bc82-794435f36bd4",
+      "path": [
+        31,
+        47,
+        63,
+        65
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "af194732-d33f-4a08-bc06-369b7e219fd3",
+      "path": [
+        52,
+        53,
+        69,
+        68
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "6ff85f15-da06-4d91-9977-ca05ce81284d",
+      "path": [
+        60,
+        44,
+        28,
+        3
+      ],
+      "headEnd": "end"
+    },
+    {
+      "id": "32ad6388-e397-4586-86d4-eaf14a491723",
+      "path": [
+        10,
+        32,
+        48,
+        46
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "5dde99cb-49dc-463b-ac07-089ce0ad933b",
+      "path": [
+        41,
+        42,
+        43,
+        59
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "8c031db3-3c14-40a2-9407-6132a138014e",
+      "path": [
+        40,
+        56,
+        55,
+        54
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "04af3155-dc62-4fd3-9831-9692fdc934b8",
+      "path": [
+        4,
+        29,
+        45,
+        61
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "eba56edb-43e4-40d4-97e0-e4a8c7bdb728",
+      "path": [
+        36,
+        37,
+        38,
+        39
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "b541acea-8091-423f-b11c-2df703f2f5d5",
+      "path": [
+        0,
+        25,
+        30,
+        5
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "7e4af6e4-8798-48f6-9726-821d86d8730d",
+      "path": [
+        73,
+        74,
+        75,
+        76
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "e05806fa-5436-4ff0-abc5-0e44876bf343",
+      "path": [
+        33,
+        49,
+        51,
+        35
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "cff3df0b-cc00-4b7b-9eea-4815cf05f913",
+      "path": [
+        6,
+        7,
+        12,
+        11
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "82d1ce0a-6cdb-4067-b948-4d4ddb096b3a",
+      "path": [
+        16,
+        15,
+        34,
+        50
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "573edaed-6940-4f69-9719-86ac23253da3",
+      "path": [
+        87,
+        86,
+        85,
+        84
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "7aebbd1c-6237-4d5f-bcbe-9f636cddcd80",
+      "path": [
+        66,
+        88,
+        93,
+        94
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "fdd1d4b9-4101-49d4-887e-92316a29043f",
+      "path": [
+        67,
+        72,
+        97,
+        92
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "7e23c7cd-546f-4ff5-9df8-1da26e984696",
+      "path": [
+        71,
+        70,
+        95
+      ],
+      "headEnd": "end"
+    },
+    {
+      "id": "1d969c73-6ef0-4850-bb50-c20b8e1fb722",
+      "path": [
+        9,
+        14,
+        19,
+        24
+      ],
+      "headEnd": "end"
+    },
+    {
+      "id": "738e64ff-2a28-4fc5-8dfb-bac3cb3ccec1",
+      "path": [
+        79,
+        78,
+        83
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "d5d9a0ba-d56d-420d-8d74-8a4c950c0352",
+      "path": [
+        8,
+        13,
+        18,
+        17
+      ],
+      "headEnd": "start"
+    },
+    {
+      "id": "ee48e2a4-ac0b-4082-bc81-54a18fc65999",
+      "path": [
+        20,
+        21,
+        22,
+        23
+      ],
+      "headEnd": "start"
+    }
+  ]
+}
