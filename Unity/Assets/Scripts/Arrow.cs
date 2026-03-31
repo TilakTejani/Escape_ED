@@ -105,7 +105,8 @@ namespace EscapeED
             for (int i = 0; i < n - 1; i++)
             {
                 float capU = dist[i] / totalDist;
-                AddFoldedRoundCap(positions[i], allNormals[i], capRadius, 12, capU, surfaceOffset,
+                // Higher segment count (24) for smooth corner wrapping on mobile
+                AddFoldedRoundCap(positions[i], allNormals[i], capRadius, 24, capU, surfaceOffset,
                                   verts, tris, uvs, meshNormals);
             }
 
@@ -267,7 +268,8 @@ namespace EscapeED
         }
 
         /// <summary>
-        /// Adds a filled disc that "folds" over edges and corners to hide gaps at joints.
+        /// Professional Face-by-Face generator with Unified Global Basis.
+        /// This ensures perfect, seamless alignment across all 3D corners.
         /// </summary>
         static void AddFoldedRoundCap(
             Vector3 center, List<Vector3> faces, float radius, int segments, float u, float offset,
@@ -276,51 +278,67 @@ namespace EscapeED
         {
             if (faces == null || faces.Count == 0) return;
 
-            // Average lift
-            Vector3 avgN = Vector3.zero;
-            foreach (var f in faces) avgN += f;
-            avgN.Normalize();
+            // 1. Unified Basis for ALL faces to ensure seams match perfectly.
+            // We use the first face normal to find a stable "Global" up/right pair.
+            Vector3 refN = faces[0];
+            Vector3 baseRight = Vector3.Cross(refN, Vector3.up);
+            if (baseRight.sqrMagnitude < 0.001f) baseRight = Vector3.Cross(refN, Vector3.forward);
+            baseRight.Normalize();
+            Vector3 baseUp = Vector3.Cross(refN, baseRight).normalized;
 
-            int centerIdx = verts.Count;
-            verts.Add(center + avgN * offset);
-            uvs.Add(new Vector2(u, 0.5f));
-            normals.Add(avgN);
-
-            // Plane basis based on average normal
-            Vector3 right = Vector3.Cross(avgN, Vector3.up);
-            if (right.sqrMagnitude < 0.01f) right = Vector3.Cross(avgN, Vector3.forward);
-            right.Normalize();
-            Vector3 up = Vector3.Cross(avgN, right).normalized;
-
-            for (int s = 0; s < segments; s++)
+            // 2. Build Slices per face
+            foreach (var faceN in faces)
             {
-                float   angle = s * Mathf.PI * 2f / segments;
-                Vector3 flatV = (right * Mathf.Cos(angle) + up * Mathf.Sin(angle)) * radius;
+                int faceCenterIdx = verts.Count;
+                verts.Add(center + faceN * offset);
+                uvs.Add(new Vector2(u, 0.5f));
+                normals.Add(faceN);
 
-                // Folding logic
-                float   maxDot = -2f;
-                Vector3 bestN  = faces[0];
-                foreach (var n in faces)
+                int startIdx = verts.Count;
+                int faceVertCount = 0;
+
+                // 3. Loop through segments using the UNIFIED basis
+                for (int s = 0; s <= segments; s++)
                 {
-                    float d = Vector3.Dot(flatV.normalized, n);
-                    if (d > maxDot)
+                    float   angle  = s * Mathf.PI * 2f / segments;
+                    Vector3 worldV = baseRight * Mathf.Cos(angle) + baseUp * Mathf.Sin(angle);
+                    
+                    // 4. "Octant Culling": Does this segment belong to THIS face?
+                    // We allow a tiny overlap (0.05 margin) to ensure slices meet perfectly.
+                    float dotSelf = Vector3.Dot(worldV.normalized, faceN);
+                    
+                    bool belongs = true;
+                    foreach(var otherN in faces) {
+                        if (otherN == faceN) continue;
+                        // Using -0.05 margin to ensure slices "lock" together without gaps
+                        if (Vector3.Dot(worldV.normalized, otherN) > dotSelf + 0.05f) {
+                            belongs = false;
+                            break;
+                        }
+                    }
+
+                    if (belongs)
                     {
-                        maxDot = d;
-                        bestN  = n;
+                        // 5. Flatten perfectly onto the face plane
+                        Vector3 projV = (worldV - Vector3.Dot(worldV, faceN) * faceN);
+                        if (projV.sqrMagnitude > 0.0001f)
+                        {
+                            Vector3 finalV = projV.normalized * radius;
+                            verts.Add(center + finalV + faceN * offset);
+                            uvs.Add(new Vector2(u, 0.5f));
+                            normals.Add(faceN);
+                            faceVertCount++;
+                        }
                     }
                 }
 
-                Vector3 foldedV = flatV - Vector3.Dot(flatV, bestN) * bestN;
-                verts.Add(center + foldedV + bestN * offset);
-                uvs.Add(new Vector2(u, 0.5f));
-                normals.Add(bestN);
-            }
-
-            for (int s = 0; s < segments; s++)
-            {
-                int cur  = centerIdx + 1 + s;
-                int next = centerIdx + 1 + (s + 1) % segments;
-                tris.Add(centerIdx); tris.Add(cur); tris.Add(next);
+                for (int i = 0; i < faceVertCount - 1; i++)
+                {
+                    int v1 = startIdx + i;
+                    int v2 = startIdx + i + 1;
+                    tris.Add(faceCenterIdx); tris.Add(v1); tris.Add(v2);
+                    tris.Add(faceCenterIdx); tris.Add(v2); tris.Add(v1);
+                }
             }
         }
 

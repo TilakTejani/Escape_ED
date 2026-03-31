@@ -118,88 +118,98 @@ namespace EscapeED
             avgNormal.Normalize();
 
             // Lift slightly (0.01 spacing for mobile safety)
-            obj.transform.position = worldPos + avgNormal * 0.002f;
+            obj.transform.position = worldPos;
             obj.transform.rotation = Quaternion.identity; // We build in world space coords relative to worldPos
 
             MeshFilter   mf = obj.AddComponent<MeshFilter>();
             MeshRenderer mr = obj.AddComponent<MeshRenderer>();
 
-            mf.mesh    = BuildFoldedCircleMesh(dotRadius, dotSegments, normals);
+            List<Vector3> verts = new List<Vector3>();
+            List<int> tris = new List<int>();
+            List<Vector2> uvs = new List<Vector2>();
+            List<Vector3> meshNormals = new List<Vector3>();
+
+            // 24 segments for extra smoothness on mobile
+            AddFoldCircle(Vector3.zero, normals, dotRadius, 24, 0.002f, verts, tris, uvs, meshNormals);
+
+            mf.mesh    = new Mesh { name = "FoldedDot", vertices = verts.ToArray(), triangles = tris.ToArray(), uv = uvs.ToArray(), normals = meshNormals.ToArray() };
+            mf.mesh.RecalculateBounds();
             mr.material = dotMaterial != null ? dotMaterial : whiteMaterial;
 
             return obj;
         }
 
         /// <summary>
-        /// Generates a circle mesh that is "bent" to lay flat on all provided face normals.
+        /// Professional Face-by-Face generator for grid dots with Unified Global Basis.
+        /// This ensures perfect, seamless alignment across all 3D corners.
         /// </summary>
-        private static Mesh BuildFoldedCircleMesh(float radius, int segments, List<Vector3> faces)
+        static void AddFoldCircle(
+            Vector3 center, List<Vector3> faces, float radius, int segments, float lift,
+            List<Vector3> verts, List<int> tris,
+            List<Vector2> uvs, List<Vector3> normals)
         {
-            var verts       = new List<Vector3>();
-            var tris        = new List<int>();
-            var uvs         = new List<Vector2>();
-            var meshNormals = new List<Vector3>();
+            if (faces == null || faces.Count == 0) return;
 
-            // Centre vertex (origin is the cube vertex)
-            verts.Add(Vector3.zero);
-            uvs.Add(new Vector2(0.5f, 0.5f));
-            meshNormals.Add(faces[0]); // Arbitrary center normal
+            // 1. Unified Basis for ALL faces to ensure seams match perfectly.
+            Vector3 refN = faces[0];
+            Vector3 baseRight = Vector3.Cross(refN, Vector3.up);
+            if (baseRight.sqrMagnitude < 0.001f) baseRight = Vector3.Cross(refN, Vector3.forward);
+            baseRight.Normalize();
+            Vector3 baseUp = Vector3.Cross(refN, baseRight).normalized;
 
-            // We build the circle on a plane perpendicular to the average normal first
-            Vector3 avgN = Vector3.zero;
-            foreach (var f in faces) avgN += f;
-            avgN.Normalize();
-
-            // Basis for the circle plane
-            Vector3 right = Vector3.Cross(avgN, Vector3.up);
-            if (right.sqrMagnitude < 0.01f) right = Vector3.Cross(avgN, Vector3.forward);
-            right.Normalize();
-            Vector3 up = Vector3.Cross(avgN, right).normalized;
-
-            // Ring vertices
-            for (int i = 0; i < segments; i++)
+            // 2. Build Slices per face
+            foreach (var faceN in faces)
             {
-                float angle = i * Mathf.PI * 2f / segments;
-                Vector3 flatV = (right * Mathf.Cos(angle) + up * Mathf.Sin(angle)) * radius;
+                int faceCenterIdx = verts.Count;
+                verts.Add(center + faceN * lift);
+                uvs.Add(new Vector2(0.5f, 0.5f));
+                normals.Add(faceN);
 
-                // "Fold" the vertex onto the closest available face
-                Vector3 foldedV = flatV;
-                float   maxDot  = -2f;
-                Vector3 bestN   = faces[0];
+                int startIdx = verts.Count;
+                int faceVertCount = 0;
 
-                foreach (var n in faces)
+                // 3. Loop through segments using the UNIFIED basis
+                for (int s = 0; s <= segments; s++)
                 {
-                    float d = Vector3.Dot(flatV.normalized, n);
-                    if (d > maxDot)
+                    float   angle  = s * Mathf.PI * 2f / segments;
+                    Vector3 worldV = baseRight * Mathf.Cos(angle) + baseUp * Mathf.Sin(angle);
+                    
+                    // 4. "Octant Culling" logic with slight overlap for seamless spread
+                    float dotSelf = Vector3.Dot(worldV.normalized, faceN);
+                    
+                    bool belongs = true;
+                    foreach(var otherN in faces) {
+                        if (otherN == faceN) continue;
+                        // Use a -0.05 margin to avoid "flat" cutoffs at the edge
+                        if (Vector3.Dot(worldV.normalized, otherN) > dotSelf + 0.05f) {
+                            belongs = false;
+                            break;
+                        }
+                    }
+
+                    if (belongs)
                     {
-                        maxDot = d;
-                        bestN  = n;
+                        // 5. Flatten perfectly onto the face plane
+                        Vector3 projV = (worldV - Vector3.Dot(worldV, faceN) * faceN);
+                        if (projV.sqrMagnitude > 0.0001f)
+                        {
+                            Vector3 finalV = projV.normalized * radius;
+                            verts.Add(center + finalV + faceN * lift);
+                            uvs.Add(new Vector2(0.5f, 0.5f));
+                            normals.Add(faceN);
+                            faceVertCount++;
+                        }
                     }
                 }
 
-                // Project flatV into the plane of bestN
-                // P = V - (V.N)*N
-                foldedV = flatV - Vector3.Dot(flatV, bestN) * bestN;
-                
-                verts.Add(foldedV);
-                uvs.Add(new Vector2(Mathf.Cos(angle) * 0.5f + 0.5f, Mathf.Sin(angle) * 0.5f + 0.5f));
-                meshNormals.Add(bestN);
+                for (int i = 0; i < faceVertCount - 1; i++)
+                {
+                    int v1 = startIdx + i;
+                    int v2 = startIdx + i + 1;
+                    tris.Add(faceCenterIdx); tris.Add(v1); tris.Add(v2);
+                    tris.Add(faceCenterIdx); tris.Add(v2); tris.Add(v1);
+                }
             }
-
-            // Triangles
-            for (int i = 1; i <= segments; i++)
-            {
-                int next = (i < segments) ? i + 1 : 1;
-                tris.Add(0); tris.Add(i); tris.Add(next);
-            }
-
-            Mesh mesh = new Mesh { name = "FoldedDot" };
-            mesh.vertices  = verts.ToArray();
-            mesh.triangles = tris.ToArray();
-            mesh.uv        = uvs.ToArray();
-            mesh.normals   = meshNormals.ToArray();
-            mesh.RecalculateBounds();
-            return mesh;
         }
 
         public GameObject GetDotByIndex(int index)
