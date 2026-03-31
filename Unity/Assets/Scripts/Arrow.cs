@@ -268,8 +268,11 @@ namespace EscapeED
         }
 
         /// <summary>
-        /// Professional Face-by-Face generator with Unified Global Basis.
-        /// This ensures perfect, seamless alignment across all 3D corners.
+        /// Per-face arc generator with exact seam boundaries.
+        /// Builds a per-face 2D basis so arcs lie correctly in each face's plane —
+        /// no projection step, so no degenerate collapse on non-primary faces.
+        /// Seam endpoints are pinned to exact Cross(faceN, otherN) directions
+        /// so adjacent face arcs share identical 3D boundary vertices.
         /// </summary>
         static void AddFoldedRoundCap(
             Vector3 center, List<Vector3> faces, float radius, int segments, float u, float offset,
@@ -278,68 +281,76 @@ namespace EscapeED
         {
             if (faces == null || faces.Count == 0) return;
 
-            // 1. Unified Basis for ALL faces to ensure seams match perfectly.
-            // We use the first face normal to find a stable "Global" up/right pair.
-            Vector3 refN = faces[0];
-            Vector3 baseRight = Vector3.Cross(refN, Vector3.up);
-            if (baseRight.sqrMagnitude < 0.001f) baseRight = Vector3.Cross(refN, Vector3.forward);
-            baseRight.Normalize();
-            Vector3 baseUp = Vector3.Cross(refN, baseRight).normalized;
-
-            // 2. Build Slices per face
             foreach (var faceN in faces)
             {
-                int faceCenterIdx = verts.Count;
+                // Per-face 2D basis lying IN this face's plane
+                Vector3 basisU = Vector3.Cross(faceN, Vector3.up);
+                if (basisU.sqrMagnitude < 0.001f) basisU = Vector3.Cross(faceN, Vector3.forward);
+                basisU.Normalize();
+                Vector3 basisV = Vector3.Cross(basisU, faceN).normalized;
+
+                // Uniform samples + exact seam boundary angles so arc endpoints
+                // match in 3D space regardless of segment count
+                var angleList = new List<float>(segments + 4);
+                for (int s = 0; s <= segments; s++)
+                    angleList.Add(s * Mathf.PI * 2f / segments);
+
+                foreach (var otherN in faces)
+                {
+                    if (otherN == faceN) continue;
+                    Vector3 seam = Vector3.Cross(faceN, otherN);
+                    if (seam.sqrMagnitude < 0.001f) continue;
+                    seam.Normalize();
+                    InsertAngle(angleList, Atan2Basis( seam, basisU, basisV));
+                    InsertAngle(angleList, Atan2Basis(-seam, basisU, basisV));
+                }
+                angleList.Sort();
+
+                int centerIdx = verts.Count;
                 verts.Add(center + faceN * offset);
                 uvs.Add(new Vector2(u, 0.5f));
                 normals.Add(faceN);
 
-                int startIdx = verts.Count;
-                int faceVertCount = 0;
+                int arcStart = verts.Count;
+                int arcCount = 0;
 
-                // 3. Loop through segments using the UNIFIED basis
-                for (int s = 0; s <= segments; s++)
+                foreach (float ang in angleList)
                 {
-                    float   angle  = s * Mathf.PI * 2f / segments;
-                    Vector3 worldV = baseRight * Mathf.Cos(angle) + baseUp * Mathf.Sin(angle);
-                    
-                    // 4. "Octant Culling": Does this segment belong to THIS face?
-                    // We allow a tiny overlap (0.05 margin) to ensure slices meet perfectly.
-                    float dotSelf = Vector3.Dot(worldV.normalized, faceN);
-                    
-                    bool belongs = true;
-                    foreach(var otherN in faces) {
-                        if (otherN == faceN) continue;
-                        // Using -0.05 margin to ensure slices "lock" together without gaps
-                        if (Vector3.Dot(worldV.normalized, otherN) > dotSelf + 0.05f) {
-                            belongs = false;
-                            break;
-                        }
-                    }
+                    // dir already lies in faceN's plane — no projection needed
+                    Vector3 dir = basisU * Mathf.Cos(ang) + basisV * Mathf.Sin(ang);
 
-                    if (belongs)
+                    bool belongs = true;
+                    foreach (var otherN in faces)
                     {
-                        // 5. Flatten perfectly onto the face plane
-                        Vector3 projV = (worldV - Vector3.Dot(worldV, faceN) * faceN);
-                        if (projV.sqrMagnitude > 0.0001f)
-                        {
-                            Vector3 finalV = projV.normalized * radius;
-                            verts.Add(center + finalV + faceN * offset);
-                            uvs.Add(new Vector2(u, 0.5f));
-                            normals.Add(faceN);
-                            faceVertCount++;
-                        }
+                        if (otherN == faceN) continue;
+                        if (Vector3.Dot(dir, otherN) > 0.02f) { belongs = false; break; }
                     }
+                    if (!belongs) continue;
+
+                    verts.Add(center + dir * radius + faceN * offset);
+                    uvs.Add(new Vector2(u, 0.5f));
+                    normals.Add(faceN);
+                    arcCount++;
                 }
 
-                for (int i = 0; i < faceVertCount - 1; i++)
+                for (int i = 0; i < arcCount - 1; i++)
                 {
-                    int v1 = startIdx + i;
-                    int v2 = startIdx + i + 1;
-                    tris.Add(faceCenterIdx); tris.Add(v1); tris.Add(v2);
-                    tris.Add(faceCenterIdx); tris.Add(v2); tris.Add(v1);
+                    tris.Add(centerIdx); tris.Add(arcStart + i);     tris.Add(arcStart + i + 1);
+                    tris.Add(centerIdx); tris.Add(arcStart + i + 1); tris.Add(arcStart + i);
                 }
             }
+        }
+
+        static float Atan2Basis(Vector3 dir, Vector3 u, Vector3 v)
+        {
+            float a = Mathf.Atan2(Vector3.Dot(dir, v), Vector3.Dot(dir, u));
+            return a < 0f ? a + Mathf.PI * 2f : a;
+        }
+
+        static void InsertAngle(List<float> list, float a, float eps = 0.001f)
+        {
+            foreach (var x in list) if (Mathf.Abs(x - a) < eps) return;
+            list.Add(a);
         }
 
         /// <summary>Adds a quad with both winding orders (visible from inside and outside).</summary>

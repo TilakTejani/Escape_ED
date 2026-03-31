@@ -49,7 +49,7 @@ MonoBehaviour:
   arrowMaterial: {fileID: 0}
   lineWidth: 0.08
   tipLength: 0.16
-  surfaceOffset: 0
+  surfaceOffset: 0.005
 --- !u!33 &1116789332955183900
 MeshFilter:
   m_ObjectHideFlags: 0
