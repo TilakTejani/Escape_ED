@@ -232,8 +232,10 @@ namespace EscapeED
         }
 
         /// <summary>
-        /// Generates a folded arrowhead when the tip vertex sits on a cube edge.
-        /// One triangle per adjacent face.
+        /// 3D spike arrowhead when the tip vertex sits on a cube edge.
+        /// Apex pops outward along the bisector direction (diagonal away from cube),
+        /// with wing bases spreading on each adjacent face — creates a spike that
+        /// visually "erupts" from the edge rather than lying flat on the surface.
         /// </summary>
         static void AddFoldTip(
             Vector3 tipPos, Vector3 tipDir,
@@ -244,27 +246,33 @@ namespace EscapeED
         {
             Vector3 in1      = InwardDir(n1, tipDir, n2);
             Vector3 in2      = InwardDir(n2, tipDir, n1);
-            Vector3 lift1    = n1 * offset;
-            Vector3 lift2    = n2 * offset;
-            // Shared bisector lift — apex and base-edge vertex are gap-free
-            Vector3 bisector = (n1 + n2).normalized * offset;
+            Vector3 spikeDir = (n1 + n2).normalized;          // diagonal outward from cube edge
 
-            Vector3 apex     = tipPos + tipDir * length + bisector;
-            Vector3 baseEdge = tipPos + bisector; // shared by both triangles
+            Vector3 apex       = tipPos + spikeDir * length;          // spike tip in space
+            Vector3 baseCenter = tipPos + spikeDir * offset;          // base centre on edge
+            Vector3 wing1      = tipPos + in1 * width + n1 * offset;  // base wing on face 1
+            Vector3 wing2      = tipPos + in2 * width + n2 * offset;  // base wing on face 2
 
-            // Face 1 triangle: shared edge → inward on face 1
+            // Left face of spike (face 1 side)
             int ti = verts.Count;
-            verts.AddRange(new[] { apex, baseEdge, tipPos + in1 * width + lift1 });
+            verts.AddRange(new[] { apex, wing1, baseCenter });
             uvs.AddRange(new[] { new Vector2(1f, 0.5f), new Vector2(uBase, 0f), new Vector2(uBase, 1f) });
             tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
             normals.Add(n1); normals.Add(n1); normals.Add(n1);
 
-            // Face 2 triangle: shared edge → inward on face 2
+            // Right face of spike (face 2 side)
             ti = verts.Count;
-            verts.AddRange(new[] { apex, baseEdge, tipPos + in2 * width + lift2 });
+            verts.AddRange(new[] { apex, baseCenter, wing2 });
             uvs.AddRange(new[] { new Vector2(1f, 0.5f), new Vector2(uBase, 0f), new Vector2(uBase, 1f) });
             tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
             normals.Add(n2); normals.Add(n2); normals.Add(n2);
+
+            // Front face of spike — visible from outside the cube, straddles both faces
+            ti = verts.Count;
+            verts.AddRange(new[] { apex, wing2, wing1 });
+            uvs.AddRange(new[] { new Vector2(1f, 0.5f), new Vector2(uBase, 1f), new Vector2(uBase, 0f) });
+            tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
+            normals.Add(spikeDir); normals.Add(spikeDir); normals.Add(spikeDir);
         }
 
         /// <summary>

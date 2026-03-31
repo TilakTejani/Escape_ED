@@ -111,15 +111,9 @@ namespace EscapeED
         {
             GameObject obj = new GameObject($"Dot_{x}_{y}_{z}");
             obj.transform.SetParent(transform);
-            
-            // Average normal for base lifting (z-fighting avoidance)
-            Vector3 avgNormal = Vector3.zero;
-            foreach (var n in normals) avgNormal += n;
-            avgNormal.Normalize();
 
             // Lift slightly (0.01 spacing for mobile safety)
             obj.transform.position = worldPos;
-            obj.transform.rotation = Quaternion.identity; // We build in world space coords relative to worldPos
 
             MeshFilter   mf = obj.AddComponent<MeshFilter>();
             MeshRenderer mr = obj.AddComponent<MeshRenderer>();
@@ -129,8 +123,8 @@ namespace EscapeED
             List<Vector2> uvs = new List<Vector2>();
             List<Vector3> meshNormals = new List<Vector3>();
 
-            // 24 segments for extra smoothness on mobile
-            AddFoldCircle(Vector3.zero, normals, dotRadius, 24, 0.002f, verts, tris, uvs, meshNormals);
+            // Use configured dotSegments for smoothness
+            AddFoldCircle(Vector3.zero, normals, dotRadius, dotSegments, 0.002f, verts, tris, uvs, meshNormals);
 
             mf.mesh    = new Mesh { name = "FoldedDot", vertices = verts.ToArray(), triangles = tris.ToArray(), uv = uvs.ToArray(), normals = meshNormals.ToArray() };
             mf.mesh.RecalculateBounds();
