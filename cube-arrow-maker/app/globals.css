@@ -1,0 +1,41 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Work+Sans:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-outfit: "Outfit", sans-serif;
+  --font-work-sans: "Work Sans", sans-serif;
+  
+  --color-violet-50: #f5f3ff;
+  --color-violet-100: #ede9fe;
+  --color-violet-600: #7c3aed;
+  --color-indigo-700: #4338ca;
+  --color-rose-500: #f43f5e;
+  --color-emerald-500: #10b981;
+  --color-amber-500: #f59e0b;
+}
+
+html, body {
+  height: 100%;
+  background: #f8fafc;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  font-family: var(--font-work-sans);
+}
+
+.font-outfit {
+  font-family: var(--font-outfit);
+}
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.08); border-radius: 10px; }
+
+/* Clean UI defaults */
+input[type="range"] {
+  @apply h-1.5 rounded-lg appearance-none bg-slate-100 cursor-pointer transition-all border border-slate-100;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  @apply appearance-none w-4 h-4 rounded-full border-2 border-white shadow-md active:scale-110 transition-transform;
+}
+
