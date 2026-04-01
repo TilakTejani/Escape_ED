@@ -5,10 +5,12 @@ namespace EscapeED
 {
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
+    [RequireComponent(typeof(MeshCollider))]
     public class Arrow : MonoBehaviour
     {
         [Header("Visuals")]
-        public Material arrowMaterial;
+        public Material arrowMaterial;       // ArrowPulseMat   — ZTest LEqual (on cube)
+        public Material arrowEjectMaterial;  // ArrowEjectMat   — ZTest Always  (exiting)
 
         [Header("Shape")]
         public float lineWidth     = 0.08f;
@@ -17,11 +19,18 @@ namespace EscapeED
 
         private MeshFilter   mf;
         private MeshRenderer mr;
+        private MeshCollider mc;
+
+        private List<Vector3>      originalPositions;
+        private List<List<Vector3>> originalNormals;
+        private List<DotType>      originalDotTypes;
+        private bool               isEjecting = false;
 
         void Awake()
         {
             mf = GetComponent<MeshFilter>();
             mr = GetComponent<MeshRenderer>();
+            mc = GetComponent<MeshCollider>();
             if (arrowMaterial != null) mr.material = arrowMaterial;
         }
 
@@ -34,9 +43,18 @@ namespace EscapeED
         public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes)
         {
             if (positions.Count < 2) return;
+
+            // Only cache original data if we aren't currently animating/ejecting
+            if (!isEjecting)
+            {
+                originalPositions = new List<Vector3>(positions);
+                originalNormals   = new List<List<Vector3>>(allNormals);
+                originalDotTypes  = new List<DotType>(dotTypes);
+            }
+
             if (mf == null) mf = GetComponent<MeshFilter>();
             if (mr == null) mr = GetComponent<MeshRenderer>();
-            if (arrowMaterial != null) mr.material = arrowMaterial;
+            if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
 
             int   n        = positions.Count;
             float halfW    = lineWidth * 0.5f;
@@ -190,6 +208,107 @@ namespace EscapeED
             mesh.normals   = meshNormals.ToArray();
             mesh.RecalculateBounds();
             mf.mesh = mesh;
+            if (mc == null) mc = GetComponent<MeshCollider>();
+            if (mc != null) mc.sharedMesh = mesh;
+        }
+
+        [ContextMenu("Eject Arrow")]
+        public void Eject()
+        {
+            if (isEjecting) return;
+            if (mc != null) mc.enabled = false;
+            StartCoroutine(EjectCoroutine());
+        }
+
+        private System.Collections.IEnumerator EjectCoroutine()
+        {
+            isEjecting = true;
+
+            int n = originalPositions.Count;
+
+            // Snapshot world-space positions before detaching from the cube
+            Vector3[] worldPos = new Vector3[n];
+            for (int i = 0; i < n; i++)
+                worldPos[i] = transform.TransformPoint(originalPositions[i]);
+
+            // Head direction in world space (parallel to the face it's on)
+            Vector3 headDir = (worldPos[n - 1] - worldPos[n - 2]).normalized;
+
+            // One grid step = distance between adjacent dots
+            float gridStep = Vector3.Distance(worldPos[0], worldPos[1]);
+
+            // Local sliding copies of normals/types — these shift forward each step
+            // so the mesh builds correctly as positions move away from their original face
+            var slideNormals  = new List<List<Vector3>>(originalNormals);
+            var slideDotTypes = new List<DotType>(originalDotTypes);
+
+            // Detach from cube — localPos=0, localRot=identity preserved, so local==world after detach
+            transform.SetParent(null, false);
+
+            // Move to EjectingArrow layer — URP Render Objects feature re-renders
+            // this layer after opaques with ZTest Always, so it's never clipped by the cube.
+            gameObject.layer = LayerMask.NameToLayer("EjectingArrow");
+
+            // ── Phase 1: on-cube dot-by-dot slide ─────────────────────────────────
+            // Each step: body shifts forward one dot; tail drops, head advances.
+            // First n steps = arrow moves its own length (still mostly on cube).
+            // Extra steps push it off the edge entirely.
+            int   onCubeSteps   = n;
+            int   exitSteps     = 10;
+            float onStepDur     = 0.10f; // seconds per step while on cube
+            float exitStepDur   = 0.12f; // seconds per step past the edge
+
+            Vector3[] stepFrom = (Vector3[])worldPos.Clone();
+            Vector3[] stepTo   = new Vector3[n];
+
+            int totalSteps = onCubeSteps + exitSteps;
+            for (int step = 0; step < totalSteps; step++)
+            {
+                float dur = step < onCubeSteps ? onStepDur : exitStepDur;
+
+                // Build target: each point moves to where the NEXT point was
+                for (int i = 0; i < n - 1; i++) stepTo[i] = stepFrom[i + 1];
+                stepTo[n - 1] = stepFrom[n - 1] + headDir * gridStep;
+
+                // Shift normals/dotTypes forward in sync with the position shift
+                slideNormals.RemoveAt(0);
+                slideNormals.Add(new List<Vector3>(slideNormals[slideNormals.Count - 1]));
+                slideDotTypes.RemoveAt(0);
+                slideDotTypes.Add(slideDotTypes[slideDotTypes.Count - 1]);
+
+                // Smooth interpolate from → to
+                float elapsed = 0f;
+                while (elapsed < dur)
+                {
+                    elapsed += Time.deltaTime;
+                    float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / dur));
+                    for (int i = 0; i < n; i++)
+                        worldPos[i] = Vector3.Lerp(stepFrom[i], stepTo[i], t);
+                    SetPath(new List<Vector3>(worldPos), slideNormals, slideDotTypes);
+                    yield return null;
+                }
+
+                // Commit step
+                System.Array.Copy(stepTo, stepFrom, n);
+                System.Array.Copy(stepTo, worldPos, n);
+            }
+
+            // ── Phase 2: launch off screen ─────────────────────────────────────────
+            // Arrow is already a straight line after Phase 1 — just slide the
+            // transform forward. No mesh rebuild needed, avoids degenerate geometry.
+            float speed    = 0.2f;
+            float accel    = 1.2f;
+            float elapsed2 = 0f;
+
+            while (elapsed2 < 1.5f)
+            {
+                elapsed2           += Time.deltaTime;
+                speed              += accel * Time.deltaTime;
+                transform.position += headDir * speed * Time.deltaTime;
+                yield return null;
+            }
+
+            Destroy(gameObject);
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────

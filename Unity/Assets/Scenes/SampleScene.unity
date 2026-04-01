@@ -17886,7 +17886,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalPosition: {x: 0, y: -0.1, z: -6.22}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -87454,7 +87454,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::EscapeED.CubeGrid
   size: {x: 5, y: 5, z: 5}
   autoScale: 1
-  spacingMult: 3.5
+  spacingMult: 3.0
   dotRadiusMult: 0.5
   spacing: 0.28
   dotRadius: 0.04

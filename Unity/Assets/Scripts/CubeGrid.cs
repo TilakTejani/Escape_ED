@@ -13,7 +13,7 @@ namespace EscapeED
         [Header("Master Scale")]
         [Tooltip("Automatically calculate spacing and dotRadius relative to Arrow width.")]
         public bool  autoScale      = true;
-        public float spacingMult    = 3.5f;
+        public float spacingMult    = 3.0f;
         public float dotRadiusMult  = 0.5f;
         
         [Header("Visuals")]

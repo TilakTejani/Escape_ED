@@ -211,10 +211,64 @@ namespace EscapeED
             }
         }
 
+        void Update()
+        {
+            // 🖥️ PC/Editor Shortcut — eject all
+            if (Keyboard.current != null && Keyboard.current.kKey.wasPressedThisFrame)
+            {
+                TestAllEjections();
+                return;
+            }
+
+            // Single tap — raycast to find and eject the tapped arrow
+            bool tapped = false;
+            Vector2 tapPos = Vector2.zero;
+
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+            {
+                tapped = true;
+                tapPos = Touchscreen.current.primaryTouch.position.ReadValue();
+            }
+            else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                tapped = true;
+                tapPos = Mouse.current.position.ReadValue();
+            }
+
+            if (tapped)
+            {
+                Ray ray = Camera.main.ScreenPointToRay(tapPos);
+                if (Physics.Raycast(ray, out RaycastHit hit))
+                {
+                    Arrow arrow = hit.collider.GetComponent<Arrow>();
+                    if (arrow != null)
+                    {
+                        arrow.Eject();
+                        activeArrows.Remove(arrow.gameObject);
+                    }
+                }
+            }
+        }
+
         public void OnJumpPressed(InputAction.CallbackContext context)
         {
             if (context.performed && GameStateManager.Instance.CurrentState == GameState.Playing)
                 GenerateProceduralLevel();
+        }
+
+        [ContextMenu("Test All Ejections")]
+        public void TestAllEjections()
+        {
+            Debug.Log($"[LevelManager] Triggering ejection for {activeArrows.Count} arrows.");
+            foreach (var arrowObj in activeArrows)
+            {
+                if (arrowObj == null) continue;
+                Arrow arrow = arrowObj.GetComponent<Arrow>();
+                if (arrow != null) arrow.Eject();
+            }
+            
+            // Note: Arrow.cs handles its own destruction after animation
+            activeArrows.Clear();
         }
 
         [ContextMenu("Generate Procedural Level")]

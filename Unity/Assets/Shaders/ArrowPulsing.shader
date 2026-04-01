@@ -5,6 +5,9 @@ Shader "EscapeED/ArrowPulsing"
         _MainColor ("Base Color", Color) = (0.05, 0.05, 0.05, 1) // Deep Matte Black
         _PulseColor ("Pulse Color", Color) = (0, 0.8, 1, 1)      // Neon Cyan
         _PulseSpeed ("Pulse Speed", Float) = 2.0
+        [Enum(UnityEngine.Rendering.CompareFunction)] _ZTest ("Z Test", Float) = 4
+        [Enum(Off, 0, On, 1)] _ZWrite ("Z Write", Float) = 0
+        _QueueOffset ("Queue Offset", Float) = 0
     }
 
     SubShader
@@ -12,11 +15,9 @@ Shader "EscapeED/ArrowPulsing"
         Tags { "RenderType"="Opaque" "RenderPipeline"="UniversalPipeline" "Queue"="Geometry+1" }
         LOD 100
 
-        // Professional Decal Trick: 
-        // This ensures the arrow sits PERECTLY on the cube without flickering (Z-fighting)
         Cull Off
-        ZWrite Off
-        ZTest LEqual
+        ZWrite [_ZWrite]
+        ZTest [_ZTest]
         Offset -1, -1
 
         Pass
