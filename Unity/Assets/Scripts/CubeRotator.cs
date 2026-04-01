@@ -158,12 +158,19 @@ namespace EscapeED
         }
 
         /// <summary>
-        /// Externally called to teleport the camera to a specific distance (e.g. during Auto-Framing)
+        /// Sets the ideal focal distance and calculates relative min/max zoom limits.
+        /// Ensure the cube is always perfectly framed regardless of size.
         /// </summary>
-        public void SetDistance(float distance)
+        public void SetZoomLimits(float idealDistance)
         {
-            targetDistance = distance;
-            currentDistance = distance;
+            targetDistance  = idealDistance;
+            currentDistance = idealDistance;
+            
+            // Dynamic limits: 40% of ideal for close-up, 150% for maximum overview
+            minDistance = idealDistance * 0.4f;
+            maxDistance = idealDistance * 1.5f;
+
+            Debug.Log($"[CubeRotator] Dynamic Zoom Limits Set: {minDistance:F2} to {maxDistance:F2} (Ideal={idealDistance:F2})");
         }
 
         [ContextMenu("Reset View")]

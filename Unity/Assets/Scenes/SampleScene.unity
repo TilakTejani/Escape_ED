@@ -87905,8 +87905,8 @@ MonoBehaviour:
   rotationFriction: 0.95
   zoomSpeed: 0.5
   zoomSmooth: 8
-  minDistance: 2
-  maxDistance: 15
+  minDistance: 6
+  maxDistance: 8
 --- !u!43 &1789152526
 Mesh:
   m_ObjectHideFlags: 0

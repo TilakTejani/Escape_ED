@@ -155,21 +155,31 @@ namespace EscapeED
             float maxDim = Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing;
             
             // Standard Camera Fit Math: 
-            // distance = (size / 2) / tan(fov / 2)
+            // We must account for both Vertical and Horizontal FOV to ensure 
+            // the sides don't get cut off on Portrait screens (iPhone).
             Camera cam = Camera.main;
-            float fovRad = cam.fieldOfView * Mathf.Deg2Rad;
-            float distance = (maxDim * 0.85f) / Mathf.Tan(fovRad * 0.5f);
+            float aspect = cam.aspect;
+            float vFovRad = cam.fieldOfView * Mathf.Deg2Rad;
             
-            // Enforce a minimum distance for small cubes
-            distance = Mathf.Max(distance, 3.5f);
-
-            // Update the CubeRotator so it doesn't snap back to 10f on first touch
+            // Calculate horizontal FOV in radians
+            float hFovRad = 2.0f * Mathf.Atan(Mathf.Tan(vFovRad * 0.5f) * aspect);
+            
+            // We use the smaller of the two FOVs to "Fit" the cube safely
+            float effectiveFovRad = Mathf.Min(vFovRad, hFovRad);
+            
+            // distance = (size / 2) / tan(fov / 2)
+            float distance = (maxDim * 1.1f) / Mathf.Tan(effectiveFovRad * 0.5f);
+            
+            // Relaxing the clamp for smaller cubes (2x2)
+            distance = Mathf.Max(distance, 2.5f);
+            
+            // Update the CubeRotator so it doesn't snap back on first touch
             CubeRotator rotator = GetComponent<CubeRotator>();
             if (rotator == null) rotator = grid.GetComponent<CubeRotator>();
             
             if (rotator != null)
             {
-                rotator.SetDistance(distance);
+                rotator.SetZoomLimits(distance);
             }
             else
             {
