@@ -80,6 +80,8 @@ namespace EscapeED
             Debug.Log($"[LevelManager] Spawning {data.arrows.Length} arrows.");
             foreach (var arrowData in data.arrows)
                 SpawnArrowFromData(arrowData);
+
+            AutoFrameCamera();
         }
 
         private void SpawnArrowFromData(ArrowData data)
@@ -143,6 +145,41 @@ namespace EscapeED
             foreach (var dot in hiddenDots)
                 if (dot != null) dot.SetActive(true);
             hiddenDots.Clear();
+        }
+
+        private void AutoFrameCamera()
+        {
+            if (grid == null) return;
+
+            // Calculate the maximum dimension of the cube
+            float maxDim = Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing;
+            
+            // Standard Camera Fit Math: 
+            // distance = (size / 2) / tan(fov / 2)
+            Camera cam = Camera.main;
+            float fovRad = cam.fieldOfView * Mathf.Deg2Rad;
+            float distance = (maxDim * 0.85f) / Mathf.Tan(fovRad * 0.5f);
+            
+            // Enforce a minimum distance for small cubes
+            distance = Mathf.Max(distance, 3.5f);
+
+            // Update the CubeRotator so it doesn't snap back to 10f on first touch
+            CubeRotator rotator = GetComponent<CubeRotator>();
+            if (rotator == null) rotator = grid.GetComponent<CubeRotator>();
+            
+            if (rotator != null)
+            {
+                rotator.SetDistance(distance);
+            }
+            else
+            {
+                // Fallback: move camera directly
+                Vector3 camPos = cam.transform.position;
+                Vector3 dir = (camPos - transform.position).normalized;
+                cam.transform.position = transform.position + dir * distance;
+            }
+
+            Debug.Log($"[LevelManager] Auto-Framing Cube at distance: {distance:F2}");
         }
 
         void Awake()

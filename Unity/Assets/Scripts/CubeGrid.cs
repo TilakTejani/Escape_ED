@@ -8,13 +8,19 @@ namespace EscapeED
     [ExecuteAlways]
     public class CubeGrid : MonoBehaviour
     {
-        public Vector3Int size    = new Vector3Int(5, 5, 5);
-        public float      spacing = 0.28f;
-
+        public Vector3Int size      = new Vector3Int(5, 5, 5);
+        
+        [Header("Master Scale")]
+        [Tooltip("Automatically calculate spacing and dotRadius relative to Arrow width.")]
+        public bool  autoScale      = true;
+        public float spacingMult    = 3.5f;
+        public float dotRadiusMult  = 0.5f;
+        
         [Header("Visuals")]
-        public Material whiteMaterial;
-        public Material dotMaterial;    // Material for the surface-embedded dot circles
+        public float    spacing      = 0.28f;
         public float    dotRadius    = 0.04f;
+        public Material whiteMaterial;
+        public Material dotMaterial;
         public int      dotSegments  = 16;
 
         private Dictionary<Vector3Int, GameObject> dots         = new Dictionary<Vector3Int, GameObject>();
@@ -78,6 +84,8 @@ namespace EscapeED
 
         public void GenerateGrid()
         {
+            if (autoScale) ApplyMasterScale();
+
             foreach (var dot in dots.Values) if (dot != null) Destroy(dot);
             dots.Clear();
             indexedDots.Clear();
@@ -104,6 +112,23 @@ namespace EscapeED
                 }
             }
             Debug.Log($"Generated {indexedDots.Count} surface dots.");
+        }
+
+        private void ApplyMasterScale()
+        {
+            LevelManager lm = FindAnyObjectByType<LevelManager>();
+            float arrowWidth = 0.08f; // Default fallback
+            
+            if (lm != null && lm.arrowPrefab != null)
+            {
+                Arrow a = lm.arrowPrefab.GetComponent<Arrow>();
+                if (a != null) arrowWidth = a.lineWidth;
+            }
+            
+            spacing   = arrowWidth * spacingMult;
+            dotRadius = arrowWidth * dotRadiusMult;
+            
+            Debug.Log($"[CubeGrid] MasterScale Applied: Spacing={spacing:F2}, DotRadius={dotRadius:F3}");
         }
 
         /// <summary>
