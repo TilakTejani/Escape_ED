@@ -31,7 +31,7 @@ namespace EscapeED
         ///   - 1 normal  → face-interior vertex  → flat quad
         ///   - 2 normals → edge vertex            → fold when both ends share the same edge
         /// </summary>
-        public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals)
+        public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes)
         {
             if (positions.Count < 2) return;
             if (mf == null) mf = GetComponent<MeshFilter>();
@@ -54,58 +54,65 @@ namespace EscapeED
             var meshNormals = new List<Vector3>();
 
             // ── Body ─────────────────────────────────────────────────────────────
+            // Pre-compute tip direction so the last segment can be trimmed if needed.
+            Vector3 preTipDir = (positions[n - 1] - positions[n - 2]).normalized;
+
             for (int i = 0; i < n - 1; i++)
             {
-                float u0 = dist[i]     / totalDist;
-                float u1 = dist[i + 1] / totalDist;
+                Vector3 a = positions[i];
+                Vector3 b = positions[i + 1];
+
+                // Trim the last segment so it ends where the arrowhead base begins,
+                // preventing the body from overlapping the wider arrowhead wings.
+                if (i == n - 2 && dotTypes[n - 1] != DotType.Face)
+                    b = positions[n - 1] - preTipDir * tipLength;
+
+                float u0 = dist[i] / totalDist;
+                float u1 = (i == n - 2 && dotTypes[n - 1] != DotType.Face)
+                    ? (dist[n - 1] - tipLength) / totalDist
+                    : dist[i + 1] / totalDist;
 
                 Vector3 nA = PrimaryNormal(allNormals[i]);
                 Vector3 nB = PrimaryNormal(allNormals[i + 1]);
 
                 // Check if both vertices share the same cube edge (2 common face normals)
                 Vector3 edgeN1, edgeN2;
-                if (IsEdgeSegment(allNormals[i], allNormals[i + 1], out edgeN1, out edgeN2))
+                if (IsEdgeSegment(allNormals[i], allNormals[i + 1], dotTypes[i], dotTypes[i + 1], out edgeN1, out edgeN2))
                 {
                     // ── Fold: two quads, one per face ─────────────────────────────
-                    Vector3 a   = positions[i];
-                    Vector3 b   = positions[i + 1];
                     Vector3 dir = (b - a).normalized;
-
                     AddFoldQuads(a, b, dir, edgeN1, edgeN2,
                                  halfW, surfaceOffset, u0, u1,
                                  verts, tris, uvs, meshNormals);
                 }
                 else
                 {
-                    // ── Normal: single quad, per-vertex lift ──────────────────────
-                    Vector3 a  = positions[i];
-                    Vector3 b  = positions[i + 1];
-
-                    Vector3 seg = (nA + nB).normalized;
-                    if (seg.sqrMagnitude < 0.01f) seg = nA;
+                    // ── Normal: single quad on face-interior's face ───────────────
+                    Vector3 faceN;
+                    if      (dotTypes[i]     == DotType.Face) faceN = nA;
+                    else if (dotTypes[i + 1] == DotType.Face) faceN = nB;
+                    else                                       faceN = nA;
 
                     Vector3 dir   = (b - a).normalized;
-                    Vector3 right = Vector3.Cross(seg, dir).normalized;
+                    Vector3 right = Vector3.Cross(faceN, dir).normalized;
+                    Vector3 lift  = faceN * surfaceOffset;
 
-                    Vector3 liftA = nA * surfaceOffset;
-                    Vector3 liftB = nB * surfaceOffset;
+                    Vector3 v0 = a - right * halfW + lift;
+                    Vector3 v1 = a + right * halfW + lift;
+                    Vector3 v2 = b + right * halfW + lift;
+                    Vector3 v3 = b - right * halfW + lift;
 
-                    Vector3 v0 = a - right * halfW + liftA;
-                    Vector3 v1 = a + right * halfW + liftA;
-                    Vector3 v2 = b + right * halfW + liftB;
-                    Vector3 v3 = b - right * halfW + liftB;
-
-                    AddQuad(v0, v1, v2, v3, nA, nA, nB, nB,
+                    AddQuad(v0, v1, v2, v3, faceN, faceN, faceN, faceN,
                             u0, u1, verts, tris, uvs, meshNormals);
                 }
             }
 
-            // ── Round caps at interior vertices AND the tail (index 0) ──────────
+            // ── Round caps — skip tip when edge/corner (arrowhead covers it) ──
             float capRadius = halfW;
-            for (int i = 0; i < n - 1; i++)
+            int   capLimit  = dotTypes[n - 1] != DotType.Face ? n - 1 : n;
+            for (int i = 0; i < capLimit; i++)
             {
                 float capU = dist[i] / totalDist;
-                // Higher segment count (24) for smooth corner wrapping on mobile
                 AddFoldedRoundCap(positions[i], allNormals[i], capRadius, 24, capU, surfaceOffset,
                                   verts, tris, uvs, meshNormals);
             }
@@ -115,27 +122,54 @@ namespace EscapeED
             Vector3 tipDir = (positions[n - 1] - positions[n - 2]).normalized;
             float   uBase  = dist[n - 1] / totalDist;
 
-            Vector3 edgeTN1 = Vector3.zero, edgeTN2 = Vector3.zero;
-            bool tipOnEdge = allNormals[n - 1].Count >= 2 &&
-                             IsEdgeSegment(allNormals[n - 2], allNormals[n - 1], out edgeTN1, out edgeTN2);
-
-            if (tipOnEdge)
+            if (dotTypes[n - 1] != DotType.Face)
             {
-                // Folded arrowhead: one triangle per face
-                AddFoldTip(tipPos, tipDir, edgeTN1, edgeTN2,
-                           halfW, tipLength, surfaceOffset, uBase,
-                           verts, tris, uvs, meshNormals);
+                // Tip is on an edge or corner — apex pulled back to tipPos so nothing floats off surface.
+                Vector3 edgeTN1, edgeTN2;
+                bool lastSegOnEdge = IsEdgeSegment(allNormals[n - 2], allNormals[n - 1],
+                                                   dotTypes[n - 2], dotTypes[n - 1],
+                                                   out edgeTN1, out edgeTN2);
+                if (lastSegOnEdge)
+                {
+                    // Incoming segment runs along an edge → fold base across both faces.
+                    // Pass tip's full normals so apex uses correct lift (corner = 3 normals).
+                    AddFoldTip(tipPos, tipDir, edgeTN1, edgeTN2, allNormals[n - 1],
+                               lineWidth, tipLength, surfaceOffset, uBase,
+                               verts, tris, uvs, meshNormals);
+                }
+                else
+                {
+                    // Incoming segment is on a face → single flat reversed tip on that face
+                    Vector3 faceN = PrimaryNormal(allNormals[n - 2]);
+                    Vector3 right = Vector3.Cross(faceN, tipDir).normalized;
+                    Vector3 lift  = faceN * surfaceOffset;
+
+                    Vector3 apex    = tipPos + lift;
+                    Vector3 basePos = tipPos - tipDir * tipLength;
+                    Vector3 baseL   = basePos - right * lineWidth + lift;
+                    Vector3 baseR   = basePos + right * lineWidth + lift;
+
+                    int ti = verts.Count;
+                    verts.AddRange(new[] { apex, baseL, baseR });
+                    uvs.AddRange(new[] {
+                        new Vector2(uBase, 0.5f),
+                        new Vector2(uBase, 0f),
+                        new Vector2(uBase, 1f)
+                    });
+                    tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
+                    meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
+                }
             }
             else
             {
-                // Flat arrowhead on single face
+                // Tip on face interior — flat forward-pointing triangle
                 Vector3 tipNormal = PrimaryNormal(allNormals[n - 1]);
                 Vector3 tipRight  = Vector3.Cross(tipNormal, tipDir).normalized;
                 Vector3 tipLift   = tipNormal * surfaceOffset;
 
                 Vector3 apex  = tipPos + tipDir   * tipLength + tipLift;
-                Vector3 baseL = tipPos - tipRight  * lineWidth + tipLift;
-                Vector3 baseR = tipPos + tipRight  * lineWidth + tipLift;
+                Vector3 baseL = tipPos - tipRight * lineWidth + tipLift;
+                Vector3 baseR = tipPos + tipRight * lineWidth + tipLift;
 
                 int ti = verts.Count;
                 verts.AddRange(new[] { apex, baseL, baseR });
@@ -168,14 +202,18 @@ namespace EscapeED
         /// (i.e., both vertices lie on the same cube edge).
         /// </summary>
         static bool IsEdgeSegment(List<Vector3> facesA, List<Vector3> facesB,
+                                   DotType typeA, DotType typeB,
                                    out Vector3 n1, out Vector3 n2)
         {
             n1 = Vector3.zero; n2 = Vector3.zero;
-            if (facesA.Count < 2 || facesB.Count < 2) return false;
+            // Fold whenever both endpoints are on a shared cube edge/corner.
+            // Face dots are the only exclusion — Edge and Corner both participate.
+            if (typeA == DotType.Face || typeB == DotType.Face) return false;
 
             var shared = new List<Vector3>(2);
-            foreach (var n in facesA)
-                if (facesB.Contains(n)) shared.Add(n);
+            foreach (var nA in facesA)
+                foreach (var nB in facesB)
+                    if (Vector3.Dot(nA, nB) > 0.99f) { shared.Add(nA); break; }
 
             if (shared.Count < 2) return false;
             n1 = shared[0];
@@ -232,47 +270,51 @@ namespace EscapeED
         }
 
         /// <summary>
-        /// 3D spike arrowhead when the tip vertex sits on a cube edge.
-        /// Apex pops outward along the bisector direction (diagonal away from cube),
-        /// with wing bases spreading on each adjacent face — creates a spike that
-        /// visually "erupts" from the edge rather than lying flat on the surface.
+        /// Folded arrowhead when the tip sits on a cube edge and the incoming segment
+        /// also runs along that edge. Apex sits AT tipPos (on the edge), base is pulled
+        /// back along -tipDir — everything stays on the cube surface.
+        /// Two triangles (one per face) share the apex and base-center vertices.
         /// </summary>
         static void AddFoldTip(
             Vector3 tipPos, Vector3 tipDir,
-            Vector3 n1, Vector3 n2,
+            Vector3 n1, Vector3 n2, List<Vector3> tipNormals,
             float width, float length, float offset, float uBase,
             List<Vector3> verts, List<int> tris,
             List<Vector2> uvs, List<Vector3> normals)
         {
             Vector3 in1      = InwardDir(n1, tipDir, n2);
             Vector3 in2      = InwardDir(n2, tipDir, n1);
-            Vector3 spikeDir = (n1 + n2).normalized;          // diagonal outward from cube edge
+            Vector3 edgeLift = (n1 + n2).normalized * offset;
 
-            Vector3 apex       = tipPos + spikeDir * length;          // spike tip in space
-            Vector3 baseCenter = tipPos + spikeDir * offset;          // base centre on edge
-            Vector3 wing1      = tipPos + in1 * width + n1 * offset;  // base wing on face 1
-            Vector3 wing2      = tipPos + in2 * width + n2 * offset;  // base wing on face 2
+            // Apex lift uses ALL normals at the tip dot — correct for corners (3 normals)
+            // where edge bisector alone would place apex at wrong position.
+            Vector3 apexDir = Vector3.zero;
+            foreach (var tn in tipNormals) apexDir += tn;
+            Vector3 apexLift = apexDir.normalized * offset;
 
-            // Left face of spike (face 1 side)
+            // Apex sits on the edge/corner at tipPos; base is recessed back along the path
+            Vector3 apex       = tipPos  + apexLift;
+            Vector3 basePos    = tipPos  - tipDir * length;
+            Vector3 baseCenter = basePos + edgeLift;
+            Vector3 wing1      = basePos + in1 * width + n1 * offset;
+            Vector3 wing2      = basePos + in2 * width + n2 * offset;
+
+            float uBack = Mathf.Max(0f, uBase - length / (length + 0.001f) * uBase);
+
+            // Face 1 triangle
             int ti = verts.Count;
             verts.AddRange(new[] { apex, wing1, baseCenter });
-            uvs.AddRange(new[] { new Vector2(1f, 0.5f), new Vector2(uBase, 0f), new Vector2(uBase, 1f) });
+            uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 0f), new Vector2(uBack, 1f) });
             tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
             normals.Add(n1); normals.Add(n1); normals.Add(n1);
 
-            // Right face of spike (face 2 side)
+            // Face 2 triangle
             ti = verts.Count;
             verts.AddRange(new[] { apex, baseCenter, wing2 });
-            uvs.AddRange(new[] { new Vector2(1f, 0.5f), new Vector2(uBase, 0f), new Vector2(uBase, 1f) });
+            uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 1f), new Vector2(uBack, 0f) });
             tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
             normals.Add(n2); normals.Add(n2); normals.Add(n2);
 
-            // Front face of spike — visible from outside the cube, straddles both faces
-            ti = verts.Count;
-            verts.AddRange(new[] { apex, wing2, wing1 });
-            uvs.AddRange(new[] { new Vector2(1f, 0.5f), new Vector2(uBase, 1f), new Vector2(uBase, 0f) });
-            tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
-            normals.Add(spikeDir); normals.Add(spikeDir); normals.Add(spikeDir);
         }
 
         /// <summary>

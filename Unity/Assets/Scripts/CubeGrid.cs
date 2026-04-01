@@ -3,6 +3,8 @@ using System.Collections.Generic;
 
 namespace EscapeED
 {
+    public enum DotType { Face, Edge, Corner }
+
     [ExecuteAlways]
     public class CubeGrid : MonoBehaviour
     {
@@ -112,7 +114,6 @@ namespace EscapeED
             GameObject obj = new GameObject($"Dot_{x}_{y}_{z}");
             obj.transform.SetParent(transform);
 
-            // Lift slightly (0.01 spacing for mobile safety)
             obj.transform.position = worldPos;
 
             MeshFilter   mf = obj.AddComponent<MeshFilter>();
@@ -246,6 +247,24 @@ namespace EscapeED
             if (p.z == 0)          result.Add(Vector3.back);
             if (p.z == size.z - 1) result.Add(Vector3.forward);
             return result;
+        }
+
+        public DotType GetDotType(int index)
+        {
+            if (index >= 0 && index < indexedCoords.Count)
+                return GetDotType(indexedCoords[index]);
+            return DotType.Face;
+        }
+
+        public DotType GetDotType(Vector3Int p)
+        {
+            int faceCount = 0;
+            if (p.x == 0 || p.x == size.x - 1) faceCount++;
+            if (p.y == 0 || p.y == size.y - 1) faceCount++;
+            if (p.z == 0 || p.z == size.z - 1) faceCount++;
+            if (faceCount >= 3) return DotType.Corner;
+            if (faceCount == 2) return DotType.Edge;
+            return DotType.Face;
         }
 
         private void CreateBackgroundCube()

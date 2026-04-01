@@ -18,11 +18,8 @@ namespace EscapeED
         public CubeGrid grid;
         private CubeNavigator navigator;
 
-        [Header("Debug")]
-        [ContextMenuItem("Generate Test Level", "GenerateProceduralLevel")]
-        public bool debugToggle;
-
-        private List<GameObject> activeArrows = new List<GameObject>();
+        private List<GameObject> activeArrows  = new List<GameObject>();
+        private List<GameObject> hiddenDots    = new List<GameObject>();
 
         private void Reset()
         {
@@ -91,6 +88,7 @@ namespace EscapeED
 
             var worldPath  = new List<Vector3>();
             var allNormals = new List<List<Vector3>>();
+            var dotTypes   = new List<DotType>();
 
             foreach (int index in data.path)
             {
@@ -99,6 +97,9 @@ namespace EscapeED
                 {
                     worldPath.Add(dot.transform.position);
                     allNormals.Add(grid.GetAllFaceNormals(index));
+                    dotTypes.Add(grid.GetDotType(index));
+                    dot.SetActive(false);
+                    hiddenDots.Add(dot);
                 }
                 else
                 {
@@ -113,6 +114,7 @@ namespace EscapeED
             {
                 worldPath.Reverse();
                 allNormals.Reverse();
+                dotTypes.Reverse();
             }
 
             GameObject arrowObj = Instantiate(arrowPrefab, transform);
@@ -128,7 +130,7 @@ namespace EscapeED
             }
 
             if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
-            arrow.SetPath(worldPath, allNormals);
+            arrow.SetPath(worldPath, allNormals, dotTypes);
             activeArrows.Add(arrowObj);
         }
 
@@ -137,6 +139,10 @@ namespace EscapeED
             foreach (var arrow in activeArrows)
                 if (arrow != null) DestroyImmediate(arrow);
             activeArrows.Clear();
+
+            foreach (var dot in hiddenDots)
+                if (dot != null) dot.SetActive(true);
+            hiddenDots.Clear();
         }
 
         void Awake()
@@ -164,10 +170,10 @@ namespace EscapeED
                 GenerateProceduralLevel();
         }
 
+        [ContextMenu("Generate Procedural Level")]
         public void GenerateProceduralLevel()
         {
-            foreach (var a in activeArrows) if (a != null) Destroy(a);
-            activeArrows.Clear();
+            ClearActiveLevel();
 
             Vector3Int startPoint = Vector3Int.zero;
             var path = new List<Vector3Int> { startPoint };
@@ -191,14 +197,19 @@ namespace EscapeED
 
             var worldPoints = new List<Vector3>();
             var allNormals  = new List<List<Vector3>>();
+            var dotTypes    = new List<DotType>();
 
             foreach (var p in gridPath)
             {
                 worldPoints.Add(grid.CalculateWorldPos(p.x, p.y, p.z));
                 allNormals.Add(grid.GetAllFaceNormals(p));
+                dotTypes.Add(grid.GetDotType(p));
+
+                GameObject dot = grid.GetDotAt(p);
+                if (dot != null) { dot.SetActive(false); hiddenDots.Add(dot); }
             }
 
-            arrow.SetPath(worldPoints, allNormals);
+            arrow.SetPath(worldPoints, allNormals, dotTypes);
             activeArrows.Add(obj);
         }
     }
