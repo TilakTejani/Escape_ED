@@ -132,7 +132,7 @@ namespace EscapeED
                     else                                       faceN = nA;
 
                     Vector3 dir   = (b - a).normalized;
-                    if (dir.sqrMagnitude < 0.0001f) dir = preTipDir; // Safety fallback
+                    if (dir.sqrMagnitude < 0.0001f) dir = preTipDir;
 
                     Vector3 right = Vector3.Cross(faceN, dir).normalized;
                     Vector3 lift  = faceN * surfaceOffset;
@@ -147,14 +147,64 @@ namespace EscapeED
                 }
             }
 
-            // ── Round caps — skip tip when edge/corner (arrowhead covers it) ──
-            float capRadius = halfW;
-            int   capLimit  = dotTypes[n - 1] != DotType.Face ? n - 1 : n;
-            for (int i = 0; i < capLimit; i++)
+
+            // ── Tail cap ─────────────────────────────────────────────────────────
+            AddFoldedRoundCap(localPos[0], allNormals[0], halfW, 16, 0f, surfaceOffset,
+                              verts, tris, uvs, meshNormals);
+
+            // ── Round joins at bends ──────────────────────────────────────────────
+            // Each bend gets:
+            //   • an outer arc  — fills the convex gap between the two segment ends
+            //   • an inner bevel triangle — fills the small concave gap
+            // No overlap with the body quads → no overdraw → no dark dots.
+            for (int i = 1; i < n - 1; i++)
             {
-                float capU = dist[i] / totalDist;
-                AddFoldedRoundCap(localPos[i], allNormals[i], capRadius, 24, capU, surfaceOffset,
-                                  verts, tris, uvs, meshNormals);
+                if (IsFoldSeg(i - 1, allNormals, dotTypes)) continue;
+                if (IsFoldSeg(i,     allNormals, dotTypes)) continue;
+
+                if (dotTypes[i] != DotType.Face)
+                {
+                    // Edge/corner bend: AddFoldedRoundCap handles multi-face arc splitting correctly.
+                    // Minor overlap with segment ends is acceptable vs a flat cut.
+                    AddFoldedRoundCap(localPos[i], allNormals[i], halfW, 16,
+                                      dist[i] / totalDist, surfaceOffset,
+                                      verts, tris, uvs, meshNormals);
+                    continue;
+                }
+
+                Vector3 dirIn  = (localPos[i]     - localPos[i - 1]).normalized;
+                Vector3 dirOut = (localPos[i + 1] - localPos[i]    ).normalized;
+                if (Vector3.Dot(dirIn, dirOut) > 0.99f) continue; // straight — nothing to fill
+
+                Vector3 faceN  = PrimaryNormal(allNormals[i]);
+                Vector3 lift   = faceN * surfaceOffset;
+                Vector3 center = localPos[i] + lift;
+
+                Vector3 rightIn  = Vector3.Cross(faceN, dirIn ).normalized;
+                Vector3 rightOut = Vector3.Cross(faceN, dirOut).normalized;
+
+                // Determine which side is outside (convex) based on turn direction
+                float turn        = Vector3.Dot(Vector3.Cross(dirIn, dirOut), faceN);
+                float outsideSign = turn >= 0f ? -1f : 1f;
+                float insideSign  = -outsideSign;
+
+                // Outer arc — exactly fills the convex gap, no segment overlap
+                Vector3 fromVec = rightIn  * outsideSign * halfW;
+                Vector3 toVec   = rightOut * outsideSign * halfW;
+                float   u       = dist[i] / totalDist;
+                AddBendArc(center, fromVec, toVec, faceN, halfW, u,
+                           verts, tris, uvs, meshNormals);
+
+                // Inner bevel triangle — fills the small concave gap
+                Vector3 innerA = center + rightIn  * insideSign * halfW;
+                Vector3 innerB = center + rightOut * insideSign * halfW;
+                int ti = verts.Count;
+                verts.AddRange(new[] { center, innerA, innerB });
+                uvs.AddRange(new[] {
+                    new Vector2(u, 0.5f), new Vector2(u, 0f), new Vector2(u, 1f)
+                });
+                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
+                meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
             }
 
             // ── Tip ──────────────────────────────────────────────────────────────
@@ -197,7 +247,7 @@ namespace EscapeED
                         new Vector2(uBase, 0f),
                         new Vector2(uBase, 1f)
                     });
-                    tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
+                    tris.AddRange(new[] { ti, ti+1, ti+2 });
                     meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
                 }
             }
@@ -219,15 +269,21 @@ namespace EscapeED
                     new Vector2(uBase, 0f),
                     new Vector2(uBase, 1f)
                 });
-                tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
+                tris.AddRange(new[] { ti, ti+1, ti+2 });
                 meshNormals.Add(tipNormal); meshNormals.Add(tipNormal); meshNormals.Add(tipNormal);
             }
 
             // ── Build mesh ───────────────────────────────────────────────────────
+            // Derive face index per vertex from its normal, stored in UV2 for per-face fading.
+            var uv2s = new Vector2[meshNormals.Count];
+            for (int vi = 0; vi < meshNormals.Count; vi++)
+                uv2s[vi] = new Vector2(FaceIndexFromNormal(meshNormals[vi]), 0f);
+
             Mesh mesh = new Mesh { name = "Arrow_" + name };
             mesh.vertices  = verts.ToArray();
             mesh.triangles = tris.ToArray();
             mesh.uv        = uvs.ToArray();
+            mesh.uv2       = uv2s;
             mesh.normals   = meshNormals.ToArray();
             mesh.RecalculateBounds();
             mf.mesh = mesh;
@@ -335,6 +391,78 @@ namespace EscapeED
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────
+
+        // Fills the outer convex gap at a bend with a circular arc fan.
+        // fromVec and toVec are the two outer-edge end vectors (already scaled by radius).
+        // The arc sweeps the shortest path from fromVec to toVec in the face plane.
+        static void AddBendArc(
+            Vector3 center, Vector3 fromVec, Vector3 toVec,
+            Vector3 faceN, float radius, float u,
+            List<Vector3> verts, List<int> tris,
+            List<Vector2> uvs, List<Vector3> normals)
+        {
+            Vector3 basisU = fromVec.normalized;
+            Vector3 basisV = Vector3.Cross(faceN, basisU).normalized;
+
+            float angleTo = Mathf.Atan2(
+                Vector3.Dot(toVec, basisV),
+                Vector3.Dot(toVec, basisU));
+
+            int steps = Mathf.Max(2, Mathf.CeilToInt(Mathf.Abs(angleTo) / (Mathf.PI / 8f)));
+
+            int centerIdx = verts.Count;
+            verts.Add(center);
+            uvs.Add(new Vector2(u, 0.5f));
+            normals.Add(faceN);
+
+            int arcStart = verts.Count;
+            for (int s = 0; s <= steps; s++)
+            {
+                float   a   = Mathf.Lerp(0f, angleTo, (float)s / steps);
+                Vector3 dir = basisU * Mathf.Cos(a) + basisV * Mathf.Sin(a);
+                verts.Add(center + dir * radius);
+                uvs.Add(new Vector2(u, 0.5f));
+                normals.Add(faceN);
+            }
+
+            for (int s = 0; s < steps; s++)
+                tris.AddRange(new[] { centerIdx, arcStart + s, arcStart + s + 1 });
+        }
+
+        // Returns true if segment i→i+1 crosses a cube edge (fold segment).
+        static bool IsFoldSeg(int i, List<List<Vector3>> allNormals, List<DotType> dotTypes)
+        {
+            Vector3 n1, n2;
+            return IsEdgeSegment(allNormals[i], allNormals[i + 1],
+                                 dotTypes[i],   dotTypes[i + 1], out n1, out n2);
+        }
+
+        // Computes the miter side-offset at the join between two segments.
+        // The result replaces `right * halfW` so adjacent segments share exact corner vertices.
+        static Vector3 MiterOffset(Vector3 dirIn, Vector3 dirOut, Vector3 faceN, float halfW)
+        {
+            Vector3 rightIn  = Vector3.Cross(faceN, dirIn ).normalized;
+            Vector3 rightOut = Vector3.Cross(faceN, dirOut).normalized;
+            Vector3 miter    = rightIn + rightOut;
+            if (miter.sqrMagnitude < 0.001f) return rightIn * halfW; // 180° turn fallback
+            miter.Normalize();
+            // Scale so the miter vertex lies exactly on both segment edge lines.
+            // Clamped to 4× halfW to prevent extreme spikes on very sharp angles.
+            float dot = Mathf.Max(Vector3.Dot(miter, rightIn), 0.25f);
+            return miter * (halfW / dot);
+        }
+
+        // Maps a cube face normal to an index 0-5 used by the shader for per-face fading.
+        // Must match the order in GhostCubeController.CubeFaceNormals.
+        static float FaceIndexFromNormal(Vector3 n)
+        {
+            if (n.y >  0.5f) return 0f; // up
+            if (n.y < -0.5f) return 1f; // down
+            if (n.x < -0.5f) return 2f; // left
+            if (n.x >  0.5f) return 3f; // right
+            if (n.z >  0.5f) return 4f; // forward
+            return 5f;                   // back
+        }
 
         static Vector3 PrimaryNormal(List<Vector3> faceNormals)
             => faceNormals != null && faceNormals.Count > 0 ? faceNormals[0] : Vector3.up;
@@ -472,14 +600,14 @@ namespace EscapeED
             int ti = verts.Count;
             verts.AddRange(new[] { apex, wing1, baseCenter });
             uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 0f), new Vector2(uBack, 1f) });
-            tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
+            tris.AddRange(new[] { ti, ti+1, ti+2 });
             normals.Add(n1); normals.Add(n1); normals.Add(n1);
 
             // Face 2 triangle
             ti = verts.Count;
             verts.AddRange(new[] { apex, baseCenter, wing2 });
             uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 1f), new Vector2(uBack, 0f) });
-            tris.AddRange(new[] { ti, ti+1, ti+2,  ti, ti+2, ti+1 });
+            tris.AddRange(new[] { ti, ti+1, ti+2 });
             normals.Add(n2); normals.Add(n2); normals.Add(n2);
 
         }
@@ -560,8 +688,7 @@ namespace EscapeED
 
                 for (int i = 0; i < arcCount - 1; i++)
                 {
-                    tris.Add(centerIdx); tris.Add(arcStart + i);     tris.Add(arcStart + i + 1);
-                    tris.Add(centerIdx); tris.Add(arcStart + i + 1); tris.Add(arcStart + i);
+                    tris.Add(centerIdx); tris.Add(arcStart + i); tris.Add(arcStart + i + 1);
                 }
             }
         }
@@ -592,8 +719,7 @@ namespace EscapeED
                 new Vector2(u0, 0f), new Vector2(u0, 1f),
                 new Vector2(u1, 1f), new Vector2(u1, 0f)
             });
-            tris.AddRange(new[] { bi, bi+1, bi+2,  bi, bi+2, bi+3 }); // front
-            tris.AddRange(new[] { bi, bi+2, bi+1,  bi, bi+3, bi+2 }); // back
+            tris.AddRange(new[] { bi, bi+1, bi+2,  bi, bi+2, bi+3 });
             normals.Add(n0); normals.Add(n1); normals.Add(n2); normals.Add(n3);
         }
     }

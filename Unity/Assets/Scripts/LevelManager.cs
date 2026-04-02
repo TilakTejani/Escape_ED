@@ -19,7 +19,8 @@ namespace EscapeED
         public bool forceWhiteBackground = true; // New: Toggle for plain white look
         private CubeNavigator navigator;
 
-        private List<GameObject> activeArrows  = new List<GameObject>();
+        private List<GameObject>      activeArrows   = new List<GameObject>();
+        private GhostCubeController   ghostController;
 
         private void Reset()
         {
@@ -127,6 +128,9 @@ namespace EscapeED
             if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
             arrow.SetPath(worldPath, allNormals, dotTypes);
             activeArrows.Add(arrowObj);
+
+            if (ghostController != null)
+                ghostController.RegisterArrow(arrowObj.GetComponent<MeshRenderer>());
         }
 
         private void ClearActiveLevel()
@@ -134,6 +138,7 @@ namespace EscapeED
             foreach (var arrow in activeArrows)
                 if (arrow != null) DestroyImmediate(arrow);
             activeArrows.Clear();
+            if (ghostController != null) ghostController.ClearArrows();
         }
 
         private void AutoFrameCamera()
@@ -183,7 +188,8 @@ namespace EscapeED
 
         void Awake()
         {
-            navigator = GetComponent<CubeNavigator>();
+            navigator       = GetComponent<CubeNavigator>();
+            if (grid != null) ghostController = grid.GetComponent<GhostCubeController>();
         }
 
         void Start()
@@ -309,6 +315,9 @@ namespace EscapeED
 
             arrow.SetPath(worldPoints, allNormals, dotTypes);
             activeArrows.Add(obj);
+
+            if (ghostController != null)
+                ghostController.RegisterArrow(obj.GetComponent<MeshRenderer>());
         }
     }
 }

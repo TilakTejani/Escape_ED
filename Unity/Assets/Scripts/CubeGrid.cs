@@ -13,10 +13,11 @@ namespace EscapeED
         
         [Header("Master Scale")]
         [Tooltip("Automatically calculate spacing and dotRadius relative to Arrow width.")]
+        public bool debugLog = true; 
         public bool  autoScale      = true;
         public float spacingMult    = 3.25f;
         public float dotRadiusMult  = 0.5f;
-        public float arrowHeadBaseMult = 2.5f; // New: Sync Arrowhead length/width from here
+        public float arrowHeadBaseMult = 2.5f; 
         
         [Header("Visuals")]
         public float    spacing      = 0.28f;
@@ -26,7 +27,7 @@ namespace EscapeED
 
         private Dictionary<Vector3Int, GameObject> dots         = new Dictionary<Vector3Int, GameObject>();
         private List<GameObject>                   indexedDots  = new List<GameObject>();
-        private List<Vector3Int>                   indexedCoords = new List<Vector3Int>(); // parallel to indexedDots
+        private List<Vector3Int>                   indexedCoords = new List<Vector3Int>(); 
         private GameObject                         backgroundCube;
         private List<GameObject>                   visualFaces = new List<GameObject>();
         private GhostCubeController                ghostController;
@@ -40,13 +41,11 @@ namespace EscapeED
         private void OnValidate()
         {
 #if UNITY_EDITOR
-            // This forces the editor to refresh when you change values in the Inspector
             if (!Application.isPlaying)
             {
                 UnityEditor.EditorApplication.delayCall += () => {
                     if (this != null) {
                         GenerateGrid();
-                        // Refresh background matches the spacing immediately.
                         RefreshBackground();
                     }
                 };
@@ -56,7 +55,6 @@ namespace EscapeED
 
         private void Reset()
         {
-            // Called when you click "Reset" in the Inspector context menu
             size = new Vector3Int(5, 5, 5);
             spacing = 0.28f;
             dotRadius = 0.04f;
@@ -67,6 +65,7 @@ namespace EscapeED
         public void ManualRegenerate()
         {
             GenerateGrid();
+            RefreshBackground();
         }
 
         void OnDestroy()
@@ -88,15 +87,12 @@ namespace EscapeED
         public void GenerateGrid()
         {
             if (autoScale) ApplyMasterScale();
-
-            // Use a helper to clear existing dots based on context
             ClearDots();
 
             dots.Clear();
             indexedDots.Clear();
             indexedCoords.Clear();
 
-            // Deterministic order: Z -> Y -> X (must match Level Maker's cube.ts)
             for (int z = 0; z < size.z; z++)
             {
                 for (int y = 0; y < size.y; y++)
@@ -104,11 +100,7 @@ namespace EscapeED
                     for (int x = 0; x < size.x; x++)
                     {
                         if (!IsSurface(x, y, z)) continue;
-
                         Vector3Int gridPos  = new Vector3Int(x, y, z);
-                        
-                        // Always keep the indexing for LevelData and Arrow placement 
-                        // even without visual dots.
                         dots[gridPos] = null;
                         indexedDots.Add(null);
                         indexedCoords.Add(gridPos);
@@ -121,7 +113,7 @@ namespace EscapeED
         private void ApplyMasterScale()
         {
             LevelManager lm = FindAnyObjectByType<LevelManager>();
-            float arrowWidth = 0.08f; // Default fallback
+            float arrowWidth = 0.08f;
             
             if (lm != null && lm.arrowPrefab != null)
             {
@@ -129,7 +121,6 @@ namespace EscapeED
                 if (a != null) 
                 {
                     arrowWidth = a.lineWidth;
-                    // Protrude Master Scale to the Arrow prefab for 1:1 Head Ratio
                     a.tipLengthMult = arrowHeadBaseMult;
                     a.tipWidthMult  = arrowHeadBaseMult;
                 }
@@ -157,10 +148,6 @@ namespace EscapeED
             return null;
         }
 
-        /// <summary>
-        /// Returns ALL face normals for a dot — 1 for face interior, 2 for edge, 3 for corner.
-        /// Used by Arrow to detect edge-spanning segments that need the fold treatment.
-        /// </summary>
         public List<Vector3> GetAllFaceNormals(int dotIndex)
         {
             if (dotIndex >= 0 && dotIndex < indexedCoords.Count)
@@ -206,14 +193,27 @@ namespace EscapeED
                 if (existing != null) backgroundCube = existing.gameObject;
                 else
                 {
-                    backgroundCube      = new GameObject("VisualCube");
+                    backgroundCube = new GameObject("VisualCube");
                     backgroundCube.transform.SetParent(transform);
                 }
             }
 
+            // CRITICAL CULPRIT REMOVAL:
+            var parentRenderer = backgroundCube.GetComponent<MeshRenderer>();
+            var parentFilter = backgroundCube.GetComponent<MeshFilter>();
+            if (parentRenderer != null)
+            {
+                if (Application.isPlaying) Destroy(parentRenderer);
+                else                       DestroyImmediate(parentRenderer);
+            }
+            if (parentFilter != null)
+            {
+                if (Application.isPlaying) Destroy(parentFilter);
+                else                       DestroyImmediate(parentFilter);
+            }
+
             backgroundCube.transform.localPosition = Vector3.zero;
 
-            // Clear ALL existing faces from the hierarchy (not just the ones in our local list)
             if (backgroundCube != null)
             {
                 var children = new List<GameObject>();
@@ -224,9 +224,18 @@ namespace EscapeED
                     else                       DestroyImmediate(child);
                 }
             }
-            visualFaces.Clear();
+            
+            foreach (Transform child in transform)
+            {
+                if (child.gameObject == backgroundCube) continue;
+                if (child.name.Contains("Cube") || child.name.Contains("Quad") || child.name.Contains("Dot"))
+                {
+                    if (Application.isPlaying) Destroy(child.gameObject);
+                    else                       DestroyImmediate(child.gameObject);
+                }
+            }
 
-            // Create 6 Faces (Planes)
+            visualFaces.Clear();
             Vector3[] normals = { Vector3.up, Vector3.down, Vector3.left, Vector3.right, Vector3.forward, Vector3.back };
             Vector3 cubeDim = (Vector3)(size - Vector3Int.one) * spacing;
 
@@ -235,27 +244,35 @@ namespace EscapeED
                 GameObject face = GameObject.CreatePrimitive(PrimitiveType.Quad);
                 face.name = "Face_" + n.ToString();
                 face.transform.SetParent(backgroundCube.transform);
-                
-                // Position at the cube edge
                 face.transform.localPosition = Vector3.Scale(n, cubeDim * 0.5f);
                 
-                // Orient face to look outward
-                face.transform.localRotation = Quaternion.LookRotation(n);
+                // Orient face OUTWARD
+                face.transform.localRotation = Quaternion.LookRotation(-n);
                 
-                // Scale to match face dimensions
                 float sw = (Mathf.Abs(n.x) > 0.01f) ? cubeDim.z : cubeDim.x;
                 float sh = (Mathf.Abs(n.y) > 0.01f) ? cubeDim.z : cubeDim.y;
                 face.transform.localScale = new Vector3(sw, sh, 1f);
 
-                if (whiteMaterial != null) face.GetComponent<Renderer>().sharedMaterial = whiteMaterial;
+                var mc = face.GetComponent<MeshCollider>();
+                if (mc != null) 
+                {
+                    if (Application.isPlaying) Destroy(mc);
+                    else                       DestroyImmediate(mc);
+                }
+
+                if (whiteMaterial != null) 
+                {
+                    face.GetComponent<Renderer>().sharedMaterial = whiteMaterial;
+                    if (debugLog && visualFaces.Count == 0) Debug.Log($"[CubeGrid] Assigned core material: {whiteMaterial.name}");
+                }
                 visualFaces.Add(face);
             }
 
-            // Initialize/Update the Ghost Controller
             if (ghostController == null) ghostController = GetComponent<GhostCubeController>();
             if (ghostController == null) ghostController = gameObject.AddComponent<GhostCubeController>();
             
             ghostController.Initialize(visualFaces, new List<Vector3>(normals));
+            Debug.Log($"[CubeGrid] Background Refreshed: {visualFaces.Count} faces initialized.");
         }
 
         public GameObject GetDotAt(Vector3Int gridPos)
