@@ -16,10 +16,10 @@ namespace EscapeED
 
         [Header("References")]
         public CubeGrid grid;
+        public bool forceWhiteBackground = true; // New: Toggle for plain white look
         private CubeNavigator navigator;
 
         private List<GameObject> activeArrows  = new List<GameObject>();
-        private List<GameObject> hiddenDots    = new List<GameObject>();
 
         private void Reset()
         {
@@ -94,19 +94,12 @@ namespace EscapeED
 
             foreach (int index in data.path)
             {
-                GameObject dot = grid.GetDotByIndex(index);
-                if (dot != null)
-                {
-                    worldPath.Add(dot.transform.position);
-                    allNormals.Add(grid.GetAllFaceNormals(index));
-                    dotTypes.Add(grid.GetDotType(index));
-                    dot.SetActive(false);
-                    hiddenDots.Add(dot);
-                }
-                else
-                {
-                    Debug.LogWarning($"[LevelManager] Missing Dot #{index} for Arrow {data.id}!");
-                }
+                // We use mathematical world positions from the grid directly
+                worldPath.Add(grid.GetWorldPosByIndex(index));
+                allNormals.Add(grid.GetAllFaceNormals(index));
+                dotTypes.Add(grid.GetDotType(index));
+                
+                // No more dots to hide!
             }
 
             if (worldPath.Count < 2) return;
@@ -141,10 +134,6 @@ namespace EscapeED
             foreach (var arrow in activeArrows)
                 if (arrow != null) DestroyImmediate(arrow);
             activeArrows.Clear();
-
-            foreach (var dot in hiddenDots)
-                if (dot != null) dot.SetActive(true);
-            hiddenDots.Clear();
         }
 
         private void AutoFrameCamera()
@@ -199,6 +188,17 @@ namespace EscapeED
 
         void Start()
         {
+            // Apply Environment Styling (Plain White Background)
+            if (forceWhiteBackground)
+            {
+                Camera cam = Camera.main;
+                if (cam != null)
+                {
+                    cam.clearFlags      = CameraClearFlags.SolidColor;
+                    cam.backgroundColor = Color.white;
+                }
+            }
+
             if (GameStateManager.Instance != null)
                 GameStateManager.Instance.UpdateState(GameState.Playing);
 
@@ -305,9 +305,6 @@ namespace EscapeED
                 worldPoints.Add(grid.CalculateWorldPos(p.x, p.y, p.z));
                 allNormals.Add(grid.GetAllFaceNormals(p));
                 dotTypes.Add(grid.GetDotType(p));
-
-                GameObject dot = grid.GetDotAt(p);
-                if (dot != null) { dot.SetActive(false); hiddenDots.Add(dot); }
             }
 
             arrow.SetPath(worldPoints, allNormals, dotTypes);

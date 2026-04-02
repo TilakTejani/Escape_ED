@@ -13,9 +13,13 @@ namespace EscapeED
         public Material arrowEjectMaterial;  // ArrowEjectMat   — ZTest Always  (exiting)
 
         [Header("Shape")]
-        public float lineWidth     = 0.08f;
-        public float tipLength     = 0.16f;
-        public float surfaceOffset = 0.005f;
+        public float lineWidth      = 0.08f;
+        public float tipLengthMult  = 2.5f; // New: Arrowhead length relative to lineWidth
+        public float tipWidthMult   = 2.5f; // New: Arrowhead base width relative to lineWidth
+        public float surfaceOffset  = 0.005f;
+
+        // Hidden from inspector as they are now derived
+        [HideInInspector] public float tipLength; 
 
         private MeshFilter   mf;
         private MeshRenderer mr;
@@ -56,14 +60,25 @@ namespace EscapeED
             if (mr == null) mr = GetComponent<MeshRenderer>();
             if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
 
+            // Calculate dynamic arrowhead dimensions
+            tipLength = lineWidth * tipLengthMult;
+            float tipHalfWidth = (lineWidth * tipWidthMult) * 0.5f;
+
             int   n        = positions.Count;
             float halfW    = lineWidth * 0.5f;
+
+            // ── Local Conversion ──────────────────────────────────────────────────
+            // Convert world-space positions to local-space relative to the arrow.
+            // This prevents misalignment if the Cube/LevelManager is moved from (0,0,0).
+            var localPos = new List<Vector3>(n);
+            for (int i = 0; i < n; i++)
+                localPos.Add(transform.InverseTransformPoint(positions[i]));
 
             // Cumulative distances for continuous UV
             float[] dist = new float[n];
             dist[0] = 0f;
             for (int i = 1; i < n; i++)
-                dist[i] = dist[i - 1] + Vector3.Distance(positions[i - 1], positions[i]);
+                dist[i] = dist[i - 1] + Vector3.Distance(localPos[i - 1], localPos[i]);
             float totalDist = dist[n - 1] + tipLength;
 
             var verts       = new List<Vector3>();
@@ -77,18 +92,23 @@ namespace EscapeED
 
             for (int i = 0; i < n - 1; i++)
             {
-                Vector3 a = positions[i];
-                Vector3 b = positions[i + 1];
+                Vector3 a = localPos[i];
+                Vector3 b = localPos[i + 1];
 
                 // Trim the last segment so it ends where the arrowhead base begins,
                 // preventing the body from overlapping the wider arrowhead wings.
-                if (i == n - 2 && dotTypes[n - 1] != DotType.Face)
-                    b = positions[n - 1] - preTipDir * tipLength;
-
-                float u0 = dist[i] / totalDist;
-                float u1 = (i == n - 2 && dotTypes[n - 1] != DotType.Face)
+                // SAFETY: Only trim if the segment is long enough to avoid degenerate flipping.
+                float segLen = Vector3.Distance(a, b);
+                if (i == n - 2 && dotTypes[n - 1] != DotType.Face && segLen > tipLength + 0.01f)
+                    b = localPos[n - 1] - preTipDir * tipLength;
+                
+                // Adjust U1 UV scaling if we trimmed
+                float actualU1 = (i == n - 2 && b != localPos[n - 1])
                     ? (dist[n - 1] - tipLength) / totalDist
                     : dist[i + 1] / totalDist;
+
+                float u0 = dist[i] / totalDist;
+                float u1 = actualU1;
 
                 Vector3 nA = PrimaryNormal(allNormals[i]);
                 Vector3 nB = PrimaryNormal(allNormals[i + 1]);
@@ -112,6 +132,8 @@ namespace EscapeED
                     else                                       faceN = nA;
 
                     Vector3 dir   = (b - a).normalized;
+                    if (dir.sqrMagnitude < 0.0001f) dir = preTipDir; // Safety fallback
+
                     Vector3 right = Vector3.Cross(faceN, dir).normalized;
                     Vector3 lift  = faceN * surfaceOffset;
 
@@ -131,13 +153,13 @@ namespace EscapeED
             for (int i = 0; i < capLimit; i++)
             {
                 float capU = dist[i] / totalDist;
-                AddFoldedRoundCap(positions[i], allNormals[i], capRadius, 24, capU, surfaceOffset,
+                AddFoldedRoundCap(localPos[i], allNormals[i], capRadius, 24, capU, surfaceOffset,
                                   verts, tris, uvs, meshNormals);
             }
 
             // ── Tip ──────────────────────────────────────────────────────────────
-            Vector3 tipPos = positions[n - 1];
-            Vector3 tipDir = (positions[n - 1] - positions[n - 2]).normalized;
+            Vector3 tipPos = localPos[n - 1];
+            Vector3 tipDir = (localPos[n - 1] - localPos[n - 2]).normalized;
             float   uBase  = dist[n - 1] / totalDist;
 
             if (dotTypes[n - 1] != DotType.Face)
@@ -151,8 +173,9 @@ namespace EscapeED
                 {
                     // Incoming segment runs along an edge → fold base across both faces.
                     // Pass tip's full normals so apex uses correct lift (corner = 3 normals).
+                    // tipHalfWidth is (lineWidth * tipWidthMult) * 0.5f
                     AddFoldTip(tipPos, tipDir, edgeTN1, edgeTN2, allNormals[n - 1],
-                               lineWidth, tipLength, surfaceOffset, uBase,
+                               tipHalfWidth, tipLength, surfaceOffset, uBase,
                                verts, tris, uvs, meshNormals);
                 }
                 else
@@ -164,8 +187,8 @@ namespace EscapeED
 
                     Vector3 apex    = tipPos + lift;
                     Vector3 basePos = tipPos - tipDir * tipLength;
-                    Vector3 baseL   = basePos - right * lineWidth + lift;
-                    Vector3 baseR   = basePos + right * lineWidth + lift;
+                    Vector3 baseL   = basePos - right * tipHalfWidth + lift;
+                    Vector3 baseR   = basePos + right * tipHalfWidth + lift;
 
                     int ti = verts.Count;
                     verts.AddRange(new[] { apex, baseL, baseR });
@@ -186,8 +209,8 @@ namespace EscapeED
                 Vector3 tipLift   = tipNormal * surfaceOffset;
 
                 Vector3 apex  = tipPos + tipDir   * tipLength + tipLift;
-                Vector3 baseL = tipPos - tipRight * lineWidth + tipLift;
-                Vector3 baseR = tipPos + tipRight * lineWidth + tipLift;
+                Vector3 baseL = tipPos - tipRight * tipHalfWidth + tipLift;
+                Vector3 baseR = tipPos + tipRight * tipHalfWidth + tipLift;
 
                 int ti = verts.Count;
                 verts.AddRange(new[] { apex, baseL, baseR });
@@ -317,6 +340,34 @@ namespace EscapeED
             => faceNormals != null && faceNormals.Count > 0 ? faceNormals[0] : Vector3.up;
 
         /// <summary>
+        /// Calculates a corrected lift vector for a point shared by multiple faces (edge or corner).
+        /// This ensures the mesh stays exactly 'offset' distance from ALL adjacent faces,
+        /// preventing the "bisector dip" that causes visual gaps/cuts at cube seams.
+        /// </summary>
+        static Vector3 GetCorrectedLift(List<Vector3> normals, float offset)
+        {
+            if (normals == null || normals.Count == 0) return Vector3.zero;
+            if (normals.Count == 1) return normals[0] * offset;
+
+            // Combine all face normals to find the bisector direction
+            Vector3 bisector = Vector3.zero;
+            foreach (var n in normals) bisector += n;
+            bisector.Normalize();
+
+            // Correct the magnitude so the projection onto any face normal equals 'offset'
+            // Magnitude = offset / cos(angle between normal and bisector)
+            float dot = Vector3.Dot(normals[0], bisector);
+            if (dot < 0.001f) return bisector * offset; // Safety fallback
+
+            return bisector * (offset / dot);
+        }
+
+        static Vector3 GetCorrectedLift(Vector3 n1, Vector3 n2, float offset)
+        {
+            return GetCorrectedLift(new List<Vector3> { n1, n2 }, offset);
+        }
+
+        /// <summary>
         /// Returns true when both vertex normal lists share exactly 2 common normals
         /// (i.e., both vertices lie on the same cube edge).
         /// </summary>
@@ -368,8 +419,8 @@ namespace EscapeED
             Vector3 in2        = InwardDir(n2, dir, n1);
             Vector3 lift1      = n1 * offset;
             Vector3 lift2      = n2 * offset;
-            // Shared edge vertices sit on the bisector — no gap between the two halves
-            Vector3 edgeLift   = (n1 + n2).normalized * offset;
+            // Shared edge vertices sit on the bisector with Miter Join correction
+            Vector3 edgeLift   = GetCorrectedLift(n1, n2, offset);
 
             // Face 1: shared edge → inward on face 1
             Vector3 f1v0 = a + edgeLift;
@@ -403,13 +454,10 @@ namespace EscapeED
         {
             Vector3 in1      = InwardDir(n1, tipDir, n2);
             Vector3 in2      = InwardDir(n2, tipDir, n1);
-            Vector3 edgeLift = (n1 + n2).normalized * offset;
+            Vector3 edgeLift = GetCorrectedLift(n1, n2, offset);
 
-            // Apex lift uses ALL normals at the tip dot — correct for corners (3 normals)
-            // where edge bisector alone would place apex at wrong position.
-            Vector3 apexDir = Vector3.zero;
-            foreach (var tn in tipNormals) apexDir += tn;
-            Vector3 apexLift = apexDir.normalized * offset;
+            // Apex lift uses ALL normals at the tip dot (corrected for corners)
+            Vector3 apexLift = GetCorrectedLift(tipNormals, offset);
 
             // Apex sits on the edge/corner at tipPos; base is recessed back along the path
             Vector3 apex       = tipPos  + apexLift;
@@ -476,7 +524,9 @@ namespace EscapeED
                 angleList.Sort();
 
                 int centerIdx = verts.Count;
-                verts.Add(center + faceN * offset);
+                // Lift the center of the circular cap using all available normals
+                // to match the miter join of the body precisely.
+                verts.Add(center + GetCorrectedLift(faces, offset));
                 uvs.Add(new Vector2(u, 0.5f));
                 normals.Add(faceN);
 
@@ -496,7 +546,13 @@ namespace EscapeED
                     }
                     if (!belongs) continue;
 
-                    verts.Add(center + dir * radius + faceN * offset);
+                    // Determine all faces this perimeter vertex touched (for miter lift)
+                    var vertexFaces = new List<Vector3> { faceN };
+                    foreach (var otherN in faces)
+                        if (otherN != faceN && Mathf.Abs(Vector3.Dot(dir, otherN)) < 0.05f)
+                            vertexFaces.Add(otherN);
+
+                    verts.Add(center + dir * radius + GetCorrectedLift(vertexFaces, offset));
                     uvs.Add(new Vector2(u, 0.5f));
                     normals.Add(faceN);
                     arcCount++;
