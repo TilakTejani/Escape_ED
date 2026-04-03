@@ -16,60 +16,36 @@ namespace EscapeED
 
         [Header("References")]
         public CubeGrid grid;
-        public bool forceWhiteBackground = true; // New: Toggle for plain white look
+        public bool forceWhiteBackground = true; 
+        public LayerMask arrowLayer; // Use Layer 6 (Arrow) in Inspector
         private CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
         private GhostCubeController   ghostController;
 
-        [Header("Physics")]
-        public LayerMask arrowLayer; // New: Assigned to "Arrow" layer
-
-        private void Reset()
-        {
-            if (grid == null)      grid      = GetComponent<CubeGrid>();
-            if (navigator == null) navigator = GetComponent<CubeNavigator>();
-        }
-
-        void Awake()
-        {
-            navigator       = GetComponent<CubeNavigator>();
-            if (grid != null) ghostController = grid.GetComponent<GhostCubeController>();
-        }
-
-        void OnEnable()
+        private void OnEnable()
         {
             GameStateManager.OnStateChanged += HandleStateChanged;
         }
 
-        void OnDisable()
+        private void OnDisable()
         {
             GameStateManager.OnStateChanged -= HandleStateChanged;
         }
 
         private void HandleStateChanged(GameState newState)
         {
-            // Transition to actual gameplay logic only when in Playing state
             if (newState == GameState.Playing)
             {
+                Debug.Log("[LevelManager] Playing state detected. Auto-Generating Level...");
                 GenerateTestLevel();
             }
         }
 
-        void Start()
+        private void Reset()
         {
-            // Apply Environment Styling (Plain White Background)
-            if (forceWhiteBackground)
-            {
-                Camera cam = Camera.main;
-                if (cam != null)
-                {
-                    cam.clearFlags      = CameraClearFlags.SolidColor;
-                    cam.backgroundColor = Color.white;
-                }
-            }
-
-            // Note: GameStateManager will auto-trigger GameState.Init on its own Start()
+            if (grid == null)      grid      = GetComponent<CubeGrid>();
+            if (navigator == null) navigator = GetComponent<CubeNavigator>();
         }
 
         [ContextMenu("Generate Test Level")]
@@ -139,13 +115,17 @@ namespace EscapeED
 
             foreach (int index in data.path)
             {
+                // We use mathematical world positions from the grid directly
                 worldPath.Add(grid.GetWorldPosByIndex(index));
                 allNormals.Add(grid.GetAllFaceNormals(index));
                 dotTypes.Add(grid.GetDotType(index));
+                
+                // No more dots to hide!
             }
 
             if (worldPath.Count < 2) return;
 
+            // Ensure arrowhead is always at path end
             if (data.headEnd == "start")
             {
                 worldPath.Reverse();
@@ -186,33 +166,69 @@ namespace EscapeED
         {
             if (grid == null) return;
 
+            // Calculate the maximum dimension of the cube
             float maxDim = Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing;
+            
+            // Standard Camera Fit Math: 
+            // We must account for both Vertical and Horizontal FOV to ensure 
+            // the sides don't get cut off on Portrait screens (iPhone).
             Camera cam = Camera.main;
             float aspect = cam.aspect;
             float vFovRad = cam.fieldOfView * Mathf.Deg2Rad;
+            
+            // Calculate horizontal FOV in radians
             float hFovRad = 2.0f * Mathf.Atan(Mathf.Tan(vFovRad * 0.5f) * aspect);
+            
+            // We use the smaller of the two FOVs to "Fit" the cube safely
             float effectiveFovRad = Mathf.Min(vFovRad, hFovRad);
+            
+            // distance = (size / 2) / tan(fov / 2)
             float distance = (maxDim * 1.1f) / Mathf.Tan(effectiveFovRad * 0.5f);
+            
+            // Relaxing the clamp for smaller cubes (2x2)
             distance = Mathf.Max(distance, 2.5f);
             
+            // Update the CubeRotator so it doesn't snap back on first touch
             CubeRotator rotator = GetComponent<CubeRotator>();
             if (rotator == null) rotator = grid.GetComponent<CubeRotator>();
             
-            if (rotator != null) {
+            if (rotator != null)
+            {
                 rotator.SetZoomLimits(distance);
-            } else {
+            }
+            else
+            {
+                // Fallback: move camera directly
                 Vector3 camPos = cam.transform.position;
                 Vector3 dir = (camPos - transform.position).normalized;
                 cam.transform.position = transform.position + dir * distance;
+            }
+
+            Debug.Log($"[LevelManager] Auto-Framing Cube at distance: {distance:F2}");
+        }
+
+        void Awake()
+        {
+            navigator       = GetComponent<CubeNavigator>();
+            if (grid != null) ghostController = grid.GetComponent<GhostCubeController>();
+        }
+
+        void Start()
+        {
+            // Apply Environment Styling (Plain White Background)
+            if (forceWhiteBackground)
+            {
+                Camera cam = Camera.main;
+                if (cam != null)
+                {
+                    cam.clearFlags      = CameraClearFlags.SolidColor;
+                    cam.backgroundColor = Color.white;
+                }
             }
         }
 
         void Update()
         {
-            // Block input unless we are in the Playing state
-            if (GameStateManager.Instance == null || GameStateManager.Instance.CurrentState != GameState.Playing)
-                return;
-
             // 🖥️ PC/Editor Shortcut — eject all
             if (Keyboard.current != null && Keyboard.current.kKey.wasPressedThisFrame)
             {
@@ -321,12 +337,15 @@ namespace EscapeED
         [ContextMenu("Test All Ejections")]
         public void TestAllEjections()
         {
+            Debug.Log($"[LevelManager] Triggering ejection for {activeArrows.Count} arrows.");
             foreach (var arrowObj in activeArrows)
             {
                 if (arrowObj == null) continue;
                 Arrow arrow = arrowObj.GetComponent<Arrow>();
                 if (arrow != null) arrow.Eject();
             }
+            
+            // Note: Arrow.cs handles its own destruction after animation
             activeArrows.Clear();
         }
 

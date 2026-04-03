@@ -15,6 +15,30 @@ namespace EscapeED.UI
         private Dictionary<GameState, BaseUIPanel> panelMap = new Dictionary<GameState, BaseUIPanel>();
         private BaseUIPanel currentPanel;
 
+        /// <summary>
+        /// MANUAL INITIALIZATION: 
+        /// Used by the bootstrapper to fix the UI on the fly.
+        /// </summary>
+        public void Initialize(BaseUIPanel[] manualPanels)
+        {
+            this.panels = manualPanels;
+            panelMap.Clear();
+
+            foreach (var panel in panels)
+            {
+                if (panel == null) continue;
+                panelMap[panel.targetState] = panel;
+                panel.gameObject.SetActive(false);
+                Debug.Log($"[UIManager] Manually Registered Panel: {panel.name} for State: {panel.targetState}");
+            }
+
+            // Kick-start the first state immediately
+            if (GameStateManager.Instance != null)
+            {
+                HandleStateChanged(GameStateManager.Instance.CurrentState);
+            }
+        }
+
         private void Awake()
         {
             if (Instance != null && Instance != this)
@@ -24,25 +48,23 @@ namespace EscapeED.UI
             }
             Instance = this;
 
-            // AUTO-RECONNECT: If inspector refs are lost, find them in children automatically
-            if (panels == null || panels.Length == 0)
+            // If we already have panels (inspector or manual), don't search
+            if (panels != null && panels.Length > 0)
             {
-                Debug.LogWarning("[UIManager] Inspector references lost. Attempting Auto-Reconnect with children...");
-                panels = GetComponentsInChildren<BaseUIPanel>(true);
-            }
-
-            if (panels == null || panels.Length == 0)
-            {
-                Debug.LogError("[UIManager] CRITICAL ERROR: No BaseUIPanel children found! Please run 'Setup EscapeED UI' context menu action.");
+                Initialize(panels);
                 return;
             }
 
-            foreach (var panel in panels)
+            // AUTO-RECONNECT: If inspector refs are lost, find them in children automatically
+            panels = GetComponentsInChildren<BaseUIPanel>(true);
+
+            if (panels != null && panels.Length > 0)
             {
-                if (panel == null) continue;
-                panelMap[panel.targetState] = panel;
-                panel.gameObject.SetActive(false);
-                Debug.Log($"[UIManager] Registered Panel: {panel.name} for State: {panel.targetState}");
+                Initialize(panels);
+            }
+            else
+            {
+                Debug.LogWarning("[UIManager] No panels found yet. Waiting for manual Initialize call.");
             }
         }
 
@@ -63,28 +85,33 @@ namespace EscapeED.UI
 
         private IEnumerator InitUIWithDelay()
         {
-            // Give Unity 0.1s to finish and stabilize all script Awake/Start calls
-            yield return new WaitForSeconds(0.1f);
+            // MOBILE STABILITY: On iOS, wait a few frames for the world to stabilize
+            yield return new WaitForSeconds(0.2f);
 
-            // AGGRESSIVE SEARCH: If Instance is still null, search the entire scene!
-            GameStateManager manager = GameStateManager.Instance;
-            if (manager == null)
+            GameStateManager manager = null;
+            int retries = 5;
+
+            while (manager == null && retries > 0)
             {
-                manager = Object.FindAnyObjectByType<GameStateManager>();
-                if (manager != null)
+                manager = GameStateManager.Instance;
+                if (manager == null) manager = Object.FindAnyObjectByType<GameStateManager>();
+
+                if (manager == null)
                 {
-                    Debug.Log("[UIManager] Auto-Search found GameStateManager!");
+                    retries--;
+                    Debug.LogWarning($"[UIManager] GameStateManager not found, retrying... ({retries} left)");
+                    yield return new WaitForSeconds(0.1f);
                 }
             }
 
             if (manager != null)
             {
-                Debug.Log($"[UIManager] Start-up initialization. State: {manager.CurrentState}");
+                Debug.Log($"[UIManager] Resilient start-up initialization. Current State: {manager.CurrentState}");
                 HandleStateChanged(manager.CurrentState);
             }
             else
             {
-                Debug.LogError("[UIManager] CRITICAL ERROR: GameStateManager NOT FOUND in scene! Please ensure the Manager object exists.");
+                Debug.LogError("[UIManager] CRITICAL ERROR: GameStateManager NOT FOUND after multiple retries! Please check your scene hierarchy.");
             }
         }
 
