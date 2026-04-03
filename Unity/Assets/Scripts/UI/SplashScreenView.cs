@@ -6,10 +6,7 @@ namespace EscapeED.UI
     public class SplashScreenView : BaseUIPanel
     {
         [Header("Splash Settings")]
-        public float splashDuration = 2f;
-
-        [Header("References")]
-        public RectTransform loadingFill;
+        public float splashDuration = 2.5f;
 
         protected override void Awake()
         {
@@ -25,46 +22,8 @@ namespace EscapeED.UI
 
         private IEnumerator TimedTransition()
         {
-            float elapsed = 0f;
-            while (elapsed < splashDuration)
-            {
-                elapsed += Time.deltaTime;
-                
-                // Update Progress Bar
-                if (loadingFill != null)
-                {
-                    float progress = elapsed / splashDuration;
-                    loadingFill.anchorMax = new Vector2(progress, 1f);
-                }
-
-                yield return null;
-            }
-
-            // Final Snap to 100%
-            if (loadingFill != null) loadingFill.anchorMax = new Vector2(1f, 1f);
-
-            yield return new WaitForSeconds(0.2f); // Short buffer
-
-            // Resilient Transition: Find manager if Instance is lost
-            GameStateManager manager = GameStateManager.Instance;
-            if (manager == null)
-            {
-                manager = Object.FindAnyObjectByType<GameStateManager>();
-            }
-
-            if (manager != null)
-            {
-                manager.UpdateState(GameState.MainMenu);
-            }
-            else
-            {
-                Debug.LogError("[SplashScreen] CRITICAL: GameStateManager missing. Transition failed.");
-                // Attempt direct UI switch if Manager is truly dead
-                if (UIManager.Instance != null)
-                {
-                    GameStateManager.Instance.UpdateState(GameState.MainMenu); // Force try
-                }
-            }
+            yield return new WaitForSeconds(splashDuration);
+            GameStateManager.Instance.UpdateState(GameState.MainMenu);
         }
     }
 }

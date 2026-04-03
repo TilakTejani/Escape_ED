@@ -15,23 +15,13 @@ namespace EscapeED.UI
 
         protected virtual void Awake()
         {
-            EnsureInitialized();
-        }
-
-        private void EnsureInitialized()
-        {
-            if (canvasGroup == null)
-            {
-                canvasGroup = GetComponent<CanvasGroup>();
-            }
+            canvasGroup = GetComponent<CanvasGroup>();
         }
 
         public virtual void Show()
         {
-            EnsureInitialized();
             StopFade();
             gameObject.SetActive(true);
-            Debug.Log($"[UI] Start showing panel: {gameObject.name}");
             fadeCoroutine = StartCoroutine(Fade(1f, true));
         }
 
