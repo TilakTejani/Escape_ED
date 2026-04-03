@@ -1,12 +1,13 @@
 using UnityEngine;
 using System.Collections.Generic;
+using EscapeED.InputHandling;
 
 namespace EscapeED
 {
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
     [RequireComponent(typeof(MeshCollider))]
-    public class Arrow : MonoBehaviour
+    public class Arrow : MonoBehaviour, IInteractable
     {
         [Header("Visuals")]
         public Material arrowMaterial;       // ArrowPulseMat   — ZTest LEqual (on cube)
@@ -29,12 +30,19 @@ namespace EscapeED
         private List<List<Vector3>> originalNormals;
         private List<DotType>      originalDotTypes;
         private bool               isEjecting = false;
+        public  bool               IsEjecting => isEjecting;
+        private Coroutine          activeShake;
 
         void Awake()
         {
             mf = GetComponent<MeshFilter>();
             mr = GetComponent<MeshRenderer>();
             mc = GetComponent<MeshCollider>();
+
+            // Automatically set layer to "Arrow" so it's detectable by the LevelManager's LayerMask
+            int arrowLayer = LayerMask.NameToLayer("Arrow");
+            if (arrowLayer != -1) gameObject.layer = arrowLayer;
+
             if (arrowMaterial != null) mr.material = arrowMaterial;
         }
 
@@ -59,6 +67,15 @@ namespace EscapeED
             if (mf == null) mf = GetComponent<MeshFilter>();
             if (mr == null) mr = GetComponent<MeshRenderer>();
             if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
+
+            // Reuse existing mesh instance to prevent memory leaks during animation
+            if (mf.sharedMesh == null) 
+            {
+                mf.sharedMesh = new Mesh { name = "Arrow_" + name };
+                mf.sharedMesh.MarkDynamic();
+            }
+            Mesh mesh = mf.sharedMesh;
+            mesh.Clear();
 
             // Calculate dynamic arrowhead dimensions
             tipLength = lineWidth * tipLengthMult;
@@ -203,7 +220,8 @@ namespace EscapeED
                 uvs.AddRange(new[] {
                     new Vector2(u, 0.5f), new Vector2(u, 0f), new Vector2(u, 1f)
                 });
-                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
+                // Correct Winding: 1, 2, 0 for Clockwise/Outward from Center
+                tris.AddRange(new[] { ti + 1, ti + 2, ti });
                 meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
             }
 
@@ -245,9 +263,10 @@ namespace EscapeED
                     uvs.AddRange(new[] {
                         new Vector2(uBase, 0.5f),
                         new Vector2(uBase, 0f),
-                        new Vector2(uBase, 1f)
+                        new Vector2(0.5f, 1f)
                     });
-                    tris.AddRange(new[] { ti, ti+1, ti+2 });
+                    // Correct Winding: Outward (baseR -> baseL -> apex)
+                    tris.AddRange(new[] { ti + 2, ti + 1, ti });
                     meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
                 }
             }
@@ -269,7 +288,8 @@ namespace EscapeED
                     new Vector2(uBase, 0f),
                     new Vector2(uBase, 1f)
                 });
-                tris.AddRange(new[] { ti, ti+1, ti+2 });
+                // Winding: baseR -> baseL -> apex
+                tris.AddRange(new[] { ti + 2, ti + 1, ti });
                 meshNormals.Add(tipNormal); meshNormals.Add(tipNormal); meshNormals.Add(tipNormal);
             }
 
@@ -279,16 +299,21 @@ namespace EscapeED
             for (int vi = 0; vi < meshNormals.Count; vi++)
                 uv2s[vi] = new Vector2(FaceIndexFromNormal(meshNormals[vi]), 0f);
 
-            Mesh mesh = new Mesh { name = "Arrow_" + name };
             mesh.vertices  = verts.ToArray();
             mesh.triangles = tris.ToArray();
             mesh.uv        = uvs.ToArray();
             mesh.uv2       = uv2s;
             mesh.normals   = meshNormals.ToArray();
             mesh.RecalculateBounds();
-            mf.mesh = mesh;
+            // Assign to MeshFilter and MeshCollider
+            mf.sharedMesh = mesh;
             if (mc == null) mc = GetComponent<MeshCollider>();
-            if (mc != null) mc.sharedMesh = mesh;
+            if (mc != null) 
+            {
+                mc.sharedMesh = null; // Force Unity physics state to recalculate
+                mc.sharedMesh = mesh;
+            }
+            
         }
 
         [ContextMenu("Eject Arrow")]
@@ -390,6 +415,59 @@ namespace EscapeED
             Destroy(gameObject);
         }
 
+        // ── Interaction Helpers ───────────────────────────────────────────────────
+
+        public event System.Action<Arrow> OnInteractionTriggered;
+
+        public void OnInteract()
+        {
+            if (!isEjecting)
+            {
+                OnInteractionTriggered?.Invoke(this);
+            }
+        }
+
+        public void GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal)
+        {
+            if (originalPositions == null || originalPositions.Count < 2)
+            {
+                tipPos = transform.position; tipDir = transform.forward; faceNormal = transform.up;
+                return;
+            }
+            int n = originalPositions.Count;
+            tipPos = transform.TransformPoint(originalPositions[n - 1]);
+            Vector3 preTip = transform.TransformPoint(originalPositions[n - 2]);
+            tipDir = (tipPos - preTip).normalized;
+            faceNormal = transform.TransformDirection(PrimaryNormal(originalNormals[n - 1]));
+        }
+
+        public void PlayBlockedAnimation()
+        {
+            if (isEjecting) return;
+            if (activeShake != null) StopCoroutine(activeShake);
+            activeShake = StartCoroutine(BlockedShakeCoroutine());
+        }
+
+        private System.Collections.IEnumerator BlockedShakeCoroutine()
+        {
+            GetEjectionData(out _, out Vector3 tipDir, out _);
+            Vector3 startPos = transform.localPosition;
+            
+            float duration = 0.15f;
+            float elapsed = 0f;
+            while(elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / duration;
+                // A quick push forward and snap back using sine wave
+                float offset = Mathf.Sin(t * Mathf.PI) * (lineWidth * 1.5f); 
+                transform.localPosition = startPos + transform.InverseTransformDirection(tipDir) * offset;
+                yield return null;
+            }
+            transform.localPosition = startPos;
+            activeShake = null;
+        }
+
         // ── Helpers ───────────────────────────────────────────────────────────────
 
         // Fills the outer convex gap at a bend with a circular arc fan.
@@ -426,7 +504,7 @@ namespace EscapeED
             }
 
             for (int s = 0; s < steps; s++)
-                tris.AddRange(new[] { centerIdx, arcStart + s, arcStart + s + 1 });
+                tris.AddRange(new[] { centerIdx, arcStart + s + 1, arcStart + s });
         }
 
         // Returns true if segment i→i+1 crosses a cube edge (fold segment).
@@ -600,14 +678,23 @@ namespace EscapeED
             int ti = verts.Count;
             verts.AddRange(new[] { apex, wing1, baseCenter });
             uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 0f), new Vector2(uBack, 1f) });
-            tris.AddRange(new[] { ti, ti+1, ti+2 });
+            // Auto-detect winding for Face 1
+            if (Vector3.Dot(Vector3.Cross(wing1 - baseCenter, apex - baseCenter), n1) < 0)
+                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
+            else
+                tris.AddRange(new[] { ti + 2, ti + 1, ti }); // Default Winding (2, 1, 0)
             normals.Add(n1); normals.Add(n1); normals.Add(n1);
 
             // Face 2 triangle
             ti = verts.Count;
             verts.AddRange(new[] { apex, baseCenter, wing2 });
             uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 1f), new Vector2(uBack, 0f) });
-            tris.AddRange(new[] { ti, ti+1, ti+2 });
+            
+            // Auto-detect winding for Face 2
+            if (Vector3.Dot(Vector3.Cross(baseCenter - wing2, apex - wing2), n2) < 0)
+                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
+            else
+                tris.AddRange(new[] { ti + 2, ti + 1, ti }); // Default Winding (2, 1, 0)
             normals.Add(n2); normals.Add(n2); normals.Add(n2);
 
         }
@@ -688,7 +775,7 @@ namespace EscapeED
 
                 for (int i = 0; i < arcCount - 1; i++)
                 {
-                    tris.Add(centerIdx); tris.Add(arcStart + i); tris.Add(arcStart + i + 1);
+                    tris.Add(centerIdx); tris.Add(arcStart + i + 1); tris.Add(arcStart + i);
                 }
             }
         }
@@ -719,7 +806,17 @@ namespace EscapeED
                 new Vector2(u0, 0f), new Vector2(u0, 1f),
                 new Vector2(u1, 1f), new Vector2(u1, 0f)
             });
-            tris.AddRange(new[] { bi, bi+1, bi+2,  bi, bi+2, bi+3 });
+            // Auto-detect if standard winding is inverted relative to the face normal
+            if (Vector3.Dot(Vector3.Cross(v2 - v0, v1 - v0), n0) < 0)
+            {
+                // Inverted winding (0, 1, 2) and (0, 2, 3)
+                tris.AddRange(new[] { bi, bi+1, bi+2,  bi, bi+2, bi+3 });
+            }
+            else
+            {
+                // Standard winding (0, 2, 1) and (0, 3, 2)
+                tris.AddRange(new[] { bi, bi+2, bi+1,  bi, bi+3, bi+2 });
+            }
             normals.Add(n0); normals.Add(n1); normals.Add(n2); normals.Add(n3);
         }
     }

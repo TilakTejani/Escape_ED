@@ -16,7 +16,8 @@ namespace EscapeED
 
         [Header("References")]
         public CubeGrid grid;
-        public bool forceWhiteBackground = true; // New: Toggle for plain white look
+        public bool forceWhiteBackground = true; 
+        public LayerMask arrowLayer; // Use Layer 6 (Arrow) in Inspector
         private CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
@@ -127,6 +128,7 @@ namespace EscapeED
 
             if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
             arrow.SetPath(worldPath, allNormals, dotTypes);
+            arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(arrowObj);
 
             if (ghostController != null)
@@ -225,35 +227,47 @@ namespace EscapeED
                 TestAllEjections();
                 return;
             }
+        }
 
-            // Single tap — raycast to find and eject the tapped arrow
-            bool tapped = false;
-            Vector2 tapPos = Vector2.zero;
+        private void HandleArrowInteraction(Arrow arrow)
+        {
+            if (arrow == null || arrow.IsEjecting) return;
 
-            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+            if (IsArrowBlocked(arrow))
             {
-                tapped = true;
-                tapPos = Touchscreen.current.primaryTouch.position.ReadValue();
+                arrow.PlayBlockedAnimation();
             }
-            else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            else
             {
-                tapped = true;
-                tapPos = Mouse.current.position.ReadValue();
+                arrow.Eject();
+                activeArrows.Remove(arrow.gameObject);
             }
+        }
 
-            if (tapped)
+        private bool IsArrowBlocked(Arrow arrow)
+        {
+            arrow.GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal);
+            
+            // SphereCast with a slightly smaller radius than the actual arrow so we don't graze neighbors
+            float radius = arrow.lineWidth * 0.45f;
+            Vector3 origin = tipPos + faceNormal * arrow.surfaceOffset;
+
+            // Cast forward far enough to clear a reasonably sized grid
+            float checkDistance = grid != null ? Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing : 20f;
+
+            // Only check collisions on the Arrow layer
+            RaycastHit[] hits = Physics.SphereCastAll(origin, radius, tipDir, checkDistance, arrowLayer);
+
+            foreach (var hit in hits)
             {
-                Ray ray = Camera.main.ScreenPointToRay(tapPos);
-                if (Physics.Raycast(ray, out RaycastHit hit))
+                Arrow hitArrow = hit.collider.GetComponentInParent<Arrow>();
+                if (hitArrow != null && hitArrow != arrow && !hitArrow.IsEjecting)
                 {
-                    Arrow arrow = hit.collider.GetComponent<Arrow>();
-                    if (arrow != null)
-                    {
-                        arrow.Eject();
-                        activeArrows.Remove(arrow.gameObject);
-                    }
+                    Debug.Log($"[LevelManager] Ejection blocked! {arrow.name} hit {hitArrow.name}");
+                    return true;
                 }
             }
+            return false;
         }
 
         public void OnJumpPressed(InputAction.CallbackContext context)
@@ -314,6 +328,7 @@ namespace EscapeED
             }
 
             arrow.SetPath(worldPoints, allNormals, dotTypes);
+            arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(obj);
 
             if (ghostController != null)

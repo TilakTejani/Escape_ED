@@ -201,7 +201,7 @@ namespace EscapeED
 
                 if (debugLog && i == 0)
                 {
-                    Debug.Log($"[GhostCube] Face 0 Alpha: {alpha:F3} (Dot: {dot:F3}) Camera: {cam.name}");
+                    // Debug.Log($"[GhostCube] Face 0 Alpha: {alpha:F3} (Dot: {dot:F3}) Camera: {cam.name}");
                 }
             }
 
