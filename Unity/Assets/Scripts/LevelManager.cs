@@ -22,6 +22,9 @@ namespace EscapeED
         private List<GameObject>      activeArrows   = new List<GameObject>();
         private GhostCubeController   ghostController;
 
+        [Header("Physics")]
+        public LayerMask arrowLayer; // New: Assigned to "Arrow" layer
+
         private void Reset()
         {
             if (grid == null)      grid      = GetComponent<CubeGrid>();

@@ -31,6 +31,16 @@ namespace EscapeED
         private List<List<Vector3>> originalNormals;
         private List<DotType>      originalDotTypes;
         private bool               isEjecting = false;
+        public  bool               IsEjecting => isEjecting;
+
+        // --- Mesh Buffers (Pre-allocated for zero GC) ---
+        private List<Vector3> verts       = new List<Vector3>();
+        private List<int>     tris        = new List<int>();
+        private List<Vector2> uvs         = new List<Vector2>();
+        private List<Vector3> meshNormals = new List<Vector3>();
+        private List<Vector2> uv2s        = new List<Vector2>();
+
+        private Coroutine     activeShake;
 
         void Awake()
         {
@@ -248,13 +258,14 @@ namespace EscapeED
             for (int vi = 0; vi < meshNormals.Count; vi++)
                 uv2s.Add(new Vector2(FaceIndexFromNormal(meshNormals[vi]), 0f));
 
-            Mesh mesh = new Mesh { name = "Arrow_" + name };
-            mesh.vertices  = verts.ToArray();
-            mesh.triangles = tris.ToArray();
-            mesh.uv        = uvs.ToArray();
-            mesh.uv2       = uv2s;
-            mesh.normals   = meshNormals.ToArray();
+            Mesh mesh = new Mesh { name = "Arrow_" + gameObject.name };
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.SetUVs(0, uvs);
+            mesh.SetUVs(1, uv2s);
+            mesh.SetNormals(meshNormals);
             mesh.RecalculateBounds();
+            
             mf.mesh = mesh;
             if (mc == null) mc = GetComponent<MeshCollider>();
             if (mc != null) mc.sharedMesh = mesh;
