@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
-using UnityEngine.InputSystem.UI; // Required for the new Input System module
+using UnityEngine.InputSystem.UI; 
 using EscapeED.UI;
 
 namespace EscapeED.EditorHelper
@@ -14,20 +14,30 @@ namespace EscapeED.EditorHelper
         [ContextMenu("Setup EscapeED UI")]
         public void SetupUI()
         {
-            // 1. Cleanup existing objects to avoid duplicates and legacy crashes
+            // 1. ANNIHILATE all legacy input systems and corrupted managers
+            var legacyModules = Object.FindObjectsByType<StandaloneInputModule>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var module in legacyModules) DestroyImmediate(module.gameObject);
+
+            // Re-create GameStateManager if missing or broken
+            GameStateManager existingGSM = Object.FindAnyObjectByType<GameStateManager>();
+            if (existingGSM == null)
+            {
+                GameObject gsmObj = new GameObject("GameStateManager", typeof(GameStateManager));
+                Debug.Log("[UIAutoSetup] Created fresh GameStateManager.");
+            }
+
+            // Cleanup existing MainUI
             GameObject oldCanvas = GameObject.Find("MainUI");
             if (oldCanvas != null) DestroyImmediate(oldCanvas);
             
-            GameObject oldES = GameObject.Find("EventSystem");
-            if (oldES != null) DestroyImmediate(oldES);
-
-            // 2. Create EventSystem with correct New Input System Module
+            // 2. Create NEW EventSystem with correct InputSystemUIInputModule
             GameObject es = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
-            Debug.Log("[UIAutoSetup] Created EventSystem with InputSystemUIInputModule");
+            es.layer = 5; // UI Layer
+            Debug.Log("[UIAutoSetup] Created clean EventSystem with InputSystemUIInputModule");
 
             // 3. Create Main Canvas
             GameObject canvasObj = new GameObject("MainUI");
-            canvasObj.layer = LayerMask.NameToLayer("UI");
+            canvasObj.layer = 5; // UI Layer
             
             Canvas canvas = canvasObj.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
@@ -65,15 +75,16 @@ namespace EscapeED.EditorHelper
             GameObject btnObj = CreateButton(homeObj.transform, "PlayButton", "PLAY GAME", new Vector2(0, 0));
             homeView.playButton = btnObj.GetComponent<Button>();
 
-            // 6. Finalize References
+            // 6. Link panels to UIManager
             uiManager.panels = new BaseUIPanel[] { splashView, homeView };
 
-            Debug.Log("[UIAutoSetup] SUCCESS: UI Structure rebuilt with New Input System compatibility.");
+            Debug.Log("[UIAutoSetup] SUCCESS: Project merged and UI rebuilt with no legacy conflicts.");
         }
 
         private GameObject CreatePanel(Transform parent, string name, Color color)
         {
             GameObject obj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            obj.layer = 5; // UI Layer
             obj.transform.SetParent(parent, false);
             
             RectTransform rect = obj.GetComponent<RectTransform>();
@@ -88,6 +99,7 @@ namespace EscapeED.EditorHelper
         private GameObject CreateText(Transform parent, string content, int fontSize, Color color, Vector2 anchoredPos)
         {
             GameObject obj = new GameObject("Text_" + content, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            obj.layer = 5; // UI Layer
             obj.transform.SetParent(parent, false);
             
             Text t = obj.GetComponent<Text>();
@@ -107,6 +119,7 @@ namespace EscapeED.EditorHelper
         private GameObject CreateButton(Transform parent, string name, string label, Vector2 anchoredPos)
         {
             GameObject btnObj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            btnObj.layer = 5; // UI Layer
             btnObj.transform.SetParent(parent, false);
             
             RectTransform rect = btnObj.GetComponent<RectTransform>();
