@@ -66,20 +66,15 @@ namespace EscapeED.UI
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         public static void ForceAutoBuildUI()
         {
-            Debug.Log("[MobileBootstrapper] AFTER_SCENE_LOAD: Checking UI health...");
-            
             if (UnityEngine.Object.FindAnyObjectByType<UIManager>() == null)
             {
-                Debug.Log("<color=orange>[MobileBootstrapper] UI NOT FOUND! Forcing Premium Runtime Rebuild...</color>");
+                Debug.LogWarning("[MobileBootstrapper] UI still missing after scene load. TRIGGERING AUTO-BUILD...");
                 
                 // Use the UIAutoSetup tool to build the missing UI on-the-fly
                 GameObject setupObj = new GameObject("RUNTIME_UISetup", typeof(UIAutoSetup));
-                var setup = setupObj.GetComponent<UIAutoSetup>();
+                setupObj.GetComponent<UIAutoSetup>().SetupUI();
                 
-                // Build it
-                setup.SetupUI();
-                
-                Debug.Log("<color=green>[MobileBootstrapper] UI BUILD COMPLETE.</color>");
+                // Cleanup the setup tool since UI is now built
                 UnityEngine.Object.Destroy(setupObj);
             }
             else

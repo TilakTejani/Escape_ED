@@ -14,9 +14,18 @@ namespace EscapeED.EditorHelper
         [ContextMenu("Setup EscapeED UI")]
         public void SetupUI()
         {
-            // 1. ANNIHILATE all legacy input systems and corrupted managers
+            Debug.Log("[UIAutoSetup] Starting Deep System Clean & Optimization...");
+
+            // 1. Kill the White Screen: Force Camera Layers
+            FixCameras();
+
+            // 2. Kill Legacy Input
             var legacyModules = Object.FindObjectsByType<StandaloneInputModule>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            foreach (var module in legacyModules) DestroyImmediate(module.gameObject);
+            foreach (var module in legacyModules) 
+            {
+                if (Application.isPlaying) Destroy(module.gameObject);
+                else DestroyImmediate(module.gameObject);
+            }
 
             // Re-create GameStateManager if missing or broken
             GameStateManager existingGSM = Object.FindAnyObjectByType<GameStateManager>();
@@ -28,14 +37,18 @@ namespace EscapeED.EditorHelper
 
             // Cleanup existing MainUI
             GameObject oldCanvas = GameObject.Find("MainUI");
-            if (oldCanvas != null) DestroyImmediate(oldCanvas);
+            if (oldCanvas != null) 
+            {
+                if (Application.isPlaying) Destroy(oldCanvas);
+                else DestroyImmediate(oldCanvas);
+            }
             
-            // 2. Create NEW EventSystem with correct InputSystemUIInputModule
+            // 3. Create NEW EventSystem with correct InputSystemUIInputModule
             GameObject es = new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
             es.layer = 5; // UI Layer
             Debug.Log("[UIAutoSetup] Created clean EventSystem with InputSystemUIInputModule");
 
-            // 3. Create Main Canvas
+            // 4. Create Main Canvas
             GameObject canvasObj = new GameObject("MainUI");
             canvasObj.layer = 5; // UI Layer
             
@@ -51,6 +64,9 @@ namespace EscapeED.EditorHelper
 
             canvasObj.AddComponent<GraphicRaycaster>();
             UIManager uiManager = canvasObj.AddComponent<UIManager>();
+            
+            // MOBILE DEBUG: Add on-screen diagnostics for iOS troubleshooting
+            canvasObj.AddComponent<MobileDebugOverlay>();
 
             // 4. Create Splash Panel
             GameObject splashObj = CreatePanel(canvasObj.transform, "SplashPanel", Color.black);
@@ -74,11 +90,16 @@ namespace EscapeED.EditorHelper
 
             GameObject btnObj = CreateButton(homeObj.transform, "PlayButton", "PLAY GAME", new Vector2(0, 0));
             homeView.playButton = btnObj.GetComponent<Button>();
+            homeView.playButton.onClick.AddListener(() => {
+                Debug.Log("[UIAutoSetup] Play Button Clicked! Transitioning to PLAYING state.");
+                GameStateManager.Instance.UpdateState(GameState.Playing);
+            });
 
-            // 6. Link panels to UIManager
-            uiManager.panels = new BaseUIPanel[] { splashView, homeView };
+            // 6. Link panels to UIManager & FINAL HANDSHAKE
+            BaseUIPanel[] allPanels = new BaseUIPanel[] { splashView, homeView };
+            uiManager.Initialize(allPanels);
 
-            Debug.Log("[UIAutoSetup] SUCCESS: Project merged and UI rebuilt with no legacy conflicts.");
+            Debug.Log("[UIAutoSetup] SUCCESS: Handshake complete. UI is now synchronized.");
         }
 
         private GameObject CreatePanel(Transform parent, string name, Color color)
@@ -131,6 +152,25 @@ namespace EscapeED.EditorHelper
             CreateText(btnObj.transform, label, 45, Color.white, Vector2.zero);
 
             return btnObj;
+        }
+
+        private static void FixCameras()
+        {
+            foreach (Camera cam in Camera.allCameras)
+            {
+                // Ensure UI layer (5) is visible in ALL cameras
+                int uiLayer = LayerMask.NameToLayer("UI");
+                cam.cullingMask |= (1 << uiLayer);
+                
+                Debug.Log($"[UIAutoSetup] Camera '{cam.name}' verified for UI rendering.");
+            }
+        }
+
+        private static void ForceLayerRecursive(Transform trans, int layer)
+        {
+            trans.gameObject.layer = layer;
+            foreach (Transform child in trans)
+                ForceLayerRecursive(child, layer);
         }
     }
 }
