@@ -244,27 +244,77 @@ namespace EscapeED
             }
         }
 
+        // Zero-GC Mobile Optimization for Overlap Queries
+        private Collider[] overlapResults = new Collider[30];
+
         private bool IsArrowBlocked(Arrow arrow)
         {
             arrow.GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal);
             
-            // SphereCast with a slightly smaller radius than the actual arrow so we don't graze neighbors
-            float radius = arrow.lineWidth * 0.45f;
-            Vector3 origin = tipPos + faceNormal * arrow.surfaceOffset;
-
-            // Cast forward far enough to clear a reasonably sized grid
+            // Use OverlapCapsule instead of SphereCast.
+            // This treats the entire ejection path as one static volume check rather than a sweep that can clip tight edges.
+            
+            // 0.95f safety margin to allow Corner Kiss without grazing side obstacles
+            float radius = (arrow.lineWidth * 0.5f) * 0.95f; 
+            
             float checkDistance = grid != null ? Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing : 20f;
 
-            // Only check collisions on the Arrow layer
-            RaycastHit[] hits = Physics.SphereCastAll(origin, radius, tipDir, checkDistance, arrowLayer);
+            // By NOT pushing p1 forward, the capsule naturally bulges backwards slightly (by 'radius').
+            // This guarantees physical intersection with any flush blocking colliders directly in front of the tip.
+            // Our own body occupying the space right behind us is safely ignored via `IsChildOf`.
+            Vector3 p1 = tipPos + faceNormal * arrow.surfaceOffset;
+            Vector3 p2 = p1 + tipDir * checkDistance;
 
-            foreach (var hit in hits)
+            Debug.DrawLine(p1, p2, Color.cyan, 2f); // Visualizing the core spine of the capsule
+
+            // FORCE physics update in case BoxColliders were just moved
+            Physics.SyncTransforms();
+
+            // 🚨 DEBUG: Force checking ALL layers, not just arrowLayer
+            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, ~0);
+            
+            // 🚨 DEBUG 2: Simple sphere test to see if ANYTHING is detectable around the tip
+            var testSphere = Physics.OverlapSphere(tipPos, 1f, ~0);
+
+            Debug.Log($"[DEBUGGING] 🏹 Ejecting {arrow.name} | Capsule Hits: {hitCount} | 1m Sphere Hits: {testSphere.Length} | p1: {p1}");
+
+            // 🚨 DEBUG 3: Are the BoxColliders even active in the scene?
+            if (hitCount == 0 && testSphere.Length == 0)
             {
-                Arrow hitArrow = hit.collider.GetComponentInParent<Arrow>();
-                if (hitArrow != null && hitArrow != arrow && !hitArrow.IsEjecting)
+                 var allBoxes = FindObjectsOfType<BoxCollider>();
+                 Debug.Log($"[DEBUGGING] Found {allBoxes.Length} total BoxColliders in the entire scene.");
+                 if (allBoxes.Length > 0) Debug.Log($"[DEBUGGING] First box: {allBoxes[0].name} | Layer: {allBoxes[0].gameObject.layer} | Enabled: {allBoxes[0].enabled}");
+            }
+
+            for (int i = 0; i < hitCount; i++)
+            {
+                Collider hitCollider = overlapResults[i];
+                if (hitCollider == null) continue;
+
+                Debug.Log($"[DEBUGGING]    -> Raw Hit: {hitCollider.name} (Parent: {hitCollider.transform.parent?.name})");
+
+                // Ignore own body segments
+                if (hitCollider.transform.IsChildOf(arrow.transform)) 
                 {
-                    Debug.Log($"[LevelManager] Ejection blocked! {arrow.name} hit {hitArrow.name}");
+                    Debug.Log("[DEBUGGING]       -> Ignored (Own body completely ignored)");
+                    continue;
+                }
+
+                Arrow hitArrow = hitCollider.GetComponentInParent<Arrow>();
+                if (hitArrow != null)
+                {
+                    if (hitArrow == arrow || hitArrow.IsEjecting)
+                    {
+                        Debug.Log($"[DEBUGGING]       -> Ignored (Target {hitArrow.name} valid but ignored because it is self or ejecting)");
+                        continue;
+                    }
+
+                    Debug.Log($"[DEBUGGING] 🚨 Blocked! OverlapCapsule detected {hitArrow.name} intersecting {arrow.name}'s path.");
                     return true;
+                }
+                else
+                {
+                    Debug.Log($"[DEBUGGING]       -> Ignored (No Arrow script found on parent)");
                 }
             }
             return false;

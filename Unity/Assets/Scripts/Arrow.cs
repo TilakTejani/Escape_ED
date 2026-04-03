@@ -6,7 +6,6 @@ namespace EscapeED
 {
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
-    [RequireComponent(typeof(MeshCollider))]
     public class Arrow : MonoBehaviour, IInteractable
     {
         [Header("Visuals")]
@@ -24,7 +23,7 @@ namespace EscapeED
 
         private MeshFilter   mf;
         private MeshRenderer mr;
-        private MeshCollider mc;
+        private List<GameObject> activeSegmentObjects = new List<GameObject>();
 
         private List<Vector3>      originalPositions;
         private List<List<Vector3>> originalNormals;
@@ -37,7 +36,6 @@ namespace EscapeED
         {
             mf = GetComponent<MeshFilter>();
             mr = GetComponent<MeshRenderer>();
-            mc = GetComponent<MeshCollider>();
 
             // Automatically set layer to "Arrow" so it's detectable by the LevelManager's LayerMask
             int arrowLayer = LayerMask.NameToLayer("Arrow");
@@ -305,14 +303,10 @@ namespace EscapeED
             mesh.uv2       = uv2s;
             mesh.normals   = meshNormals.ToArray();
             mesh.RecalculateBounds();
-            // Assign to MeshFilter and MeshCollider
             mf.sharedMesh = mesh;
-            if (mc == null) mc = GetComponent<MeshCollider>();
-            if (mc != null) 
-            {
-                mc.sharedMesh = null; // Force Unity physics state to recalculate
-                mc.sharedMesh = mesh;
-            }
+
+            // ── Update Box Colliders ──────────────────────────────────────────────
+            UpdateSegmentColliders(localPos, allNormals, dotTypes);
             
         }
 
@@ -320,8 +314,86 @@ namespace EscapeED
         public void Eject()
         {
             if (isEjecting) return;
-            if (mc != null) mc.enabled = false;
+            foreach(var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
             StartCoroutine(EjectCoroutine());
+        }
+
+        private void UpdateSegmentColliders(List<Vector3> localPos, List<List<Vector3>> allNormals, List<DotType> dotTypes)
+        {
+            foreach (var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
+
+            int segIndex = 0;
+            int n = localPos.Count;
+            for (int i = 0; i < n - 1; i++)
+            {
+                Vector3 start = localPos[i];
+                Vector3 end = localPos[i + 1];
+                float length = Vector3.Distance(start, end);
+
+                if (length < 0.001f) continue;
+
+                Vector3 center = (start + end) / 2f;
+                Vector3 dir = (end - start).normalized;
+
+                // Try to get a valid face normal for the 'up' direction of the box
+                Vector3 faceN = PrimaryNormal(allNormals[i]);
+                if (dotTypes[i] != DotType.Face && dotTypes[i + 1] == DotType.Face)
+                    faceN = PrimaryNormal(allNormals[i + 1]);
+
+                Quaternion rot = Quaternion.LookRotation(dir, faceN);
+
+                GameObject segmentObj = null;
+                BoxCollider col = null;
+
+                if (segIndex < activeSegmentObjects.Count)
+                {
+                    segmentObj = activeSegmentObjects[segIndex];
+                    if (segmentObj != null)
+                    {
+                        segmentObj.SetActive(true);
+                        col = segmentObj.GetComponent<BoxCollider>();
+                    }
+                }
+                
+                if (segmentObj == null)
+                {
+                    segmentObj = new GameObject($"SegmentCollider_{segIndex}");
+                    segmentObj.transform.SetParent(this.transform, false);
+                    segmentObj.layer = this.gameObject.layer;
+                    col = segmentObj.AddComponent<BoxCollider>();
+                    if (segIndex < activeSegmentObjects.Count)
+                        activeSegmentObjects[segIndex] = segmentObj;
+                    else
+                        activeSegmentObjects.Add(segmentObj);
+                }
+
+                segmentObj.transform.localPosition = center;
+                segmentObj.transform.localRotation = rot;
+
+                // Center is local to the segment object, lift it up by the surface offset
+                col.center = new Vector3(0, surfaceOffset, 0);
+                col.size = new Vector3(lineWidth, lineWidth, length);
+
+                segIndex++;
+            }
+        }
+
+        private void OnDrawGizmosSelected()
+        {
+            if (activeSegmentObjects == null) return;
+            Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
+            foreach (var seg in activeSegmentObjects)
+            {
+                if (seg == null || !seg.activeSelf) continue;
+                BoxCollider col = seg.GetComponent<BoxCollider>();
+                if (col == null) continue;
+                
+                Gizmos.matrix = seg.transform.localToWorldMatrix;
+                Gizmos.DrawCube(col.center, col.size);
+                Gizmos.color = Color.green;
+                Gizmos.DrawWireCube(col.center, col.size);
+                Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
+            }
         }
 
         private System.Collections.IEnumerator EjectCoroutine()
