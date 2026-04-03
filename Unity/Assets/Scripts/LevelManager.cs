@@ -262,59 +262,35 @@ namespace EscapeED
             // By NOT pushing p1 forward, the capsule naturally bulges backwards slightly (by 'radius').
             // This guarantees physical intersection with any flush blocking colliders directly in front of the tip.
             // Our own body occupying the space right behind us is safely ignored via `IsChildOf`.
+            // p1 is World Space Tip position, lifted away from face by offset.
             Vector3 p1 = tipPos + faceNormal * arrow.surfaceOffset;
             Vector3 p2 = p1 + tipDir * checkDistance;
 
-            Debug.DrawLine(p1, p2, Color.cyan, 2f); // Visualizing the core spine of the capsule
+            Debug.DrawLine(p1, p2, Color.cyan, 2f); // Core spine
 
-            // FORCE physics update in case BoxColliders were just moved
+            // Forces transform changes to flush to the physics engine before the query.
+            // Critical if the arrow just finished a 'Return to Home' move in the same frame.
             Physics.SyncTransforms();
 
-            // 🚨 DEBUG: Force checking ALL layers, not just arrowLayer
-            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, ~0);
-            
-            // 🚨 DEBUG 2: Simple sphere test to see if ANYTHING is detectable around the tip
-            var testSphere = Physics.OverlapSphere(tipPos, 1f, ~0);
-
-            Debug.Log($"[DEBUGGING] 🏹 Ejecting {arrow.name} | Capsule Hits: {hitCount} | 1m Sphere Hits: {testSphere.Length} | p1: {p1}");
-
-            // 🚨 DEBUG 3: Are the BoxColliders even active in the scene?
-            if (hitCount == 0 && testSphere.Length == 0)
-            {
-                 var allBoxes = FindObjectsOfType<BoxCollider>();
-                 Debug.Log($"[DEBUGGING] Found {allBoxes.Length} total BoxColliders in the entire scene.");
-                 if (allBoxes.Length > 0) Debug.Log($"[DEBUGGING] First box: {allBoxes[0].name} | Layer: {allBoxes[0].gameObject.layer} | Enabled: {allBoxes[0].enabled}");
-            }
+            // Perform volume query along the ejection path.
+            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, arrowLayer);
 
             for (int i = 0; i < hitCount; i++)
             {
                 Collider hitCollider = overlapResults[i];
                 if (hitCollider == null) continue;
 
-                Debug.Log($"[DEBUGGING]    -> Raw Hit: {hitCollider.name} (Parent: {hitCollider.transform.parent?.name})");
-
-                // Ignore own body segments
-                if (hitCollider.transform.IsChildOf(arrow.transform)) 
-                {
-                    Debug.Log("[DEBUGGING]       -> Ignored (Own body completely ignored)");
-                    continue;
-                }
+                // Ignore components that are children of the current arrow to prevent blocking by it's own tail.
+                if (hitCollider.transform.IsChildOf(arrow.transform)) continue;
 
                 Arrow hitArrow = hitCollider.GetComponentInParent<Arrow>();
                 if (hitArrow != null)
                 {
-                    if (hitArrow == arrow || hitArrow.IsEjecting)
+                    // If we hit an arrow that is NOT us and NOT currently ejecting, it's a genuine blocker.
+                    if (hitArrow != arrow && !hitArrow.IsEjecting)
                     {
-                        Debug.Log($"[DEBUGGING]       -> Ignored (Target {hitArrow.name} valid but ignored because it is self or ejecting)");
-                        continue;
+                        return true;
                     }
-
-                    Debug.Log($"[DEBUGGING] 🚨 Blocked! OverlapCapsule detected {hitArrow.name} intersecting {arrow.name}'s path.");
-                    return true;
-                }
-                else
-                {
-                    Debug.Log($"[DEBUGGING]       -> Ignored (No Arrow script found on parent)");
                 }
             }
             return false;

@@ -28,8 +28,17 @@ namespace EscapeED
         private List<Vector3>      originalPositions;
         private List<List<Vector3>> originalNormals;
         private List<DotType>      originalDotTypes;
-        private bool               isEjecting = false;
-        public  bool               IsEjecting => isEjecting;
+        
+        public enum ArrowState 
+        { 
+            Idle, 
+            Blocked, 
+            Ejecting 
+        }
+        public ArrowState State { get; private set; } = ArrowState.Idle;
+        public bool IsEjecting => State == ArrowState.Ejecting; // Maintain backward compatibility for LevelManager checks
+        public bool isFrozen = false; 
+
         private Coroutine          activeShake;
 
         void Awake()
@@ -55,7 +64,7 @@ namespace EscapeED
             if (positions.Count < 2) return;
 
             // Only cache original data if we aren't currently animating/ejecting
-            if (!isEjecting)
+            if (State != ArrowState.Ejecting)
             {
                 originalPositions = new List<Vector3>(positions);
                 originalNormals   = new List<List<Vector3>>(allNormals);
@@ -64,7 +73,7 @@ namespace EscapeED
 
             if (mf == null) mf = GetComponent<MeshFilter>();
             if (mr == null) mr = GetComponent<MeshRenderer>();
-            if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
+            if (arrowMaterial != null && State != ArrowState.Ejecting) mr.material = arrowMaterial;
 
             // Reuse existing mesh instance to prevent memory leaks during animation
             if (mf.sharedMesh == null) 
@@ -313,7 +322,7 @@ namespace EscapeED
         [ContextMenu("Eject Arrow")]
         public void Eject()
         {
-            if (isEjecting) return;
+            if (State != ArrowState.Idle) return;
             foreach(var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
             StartCoroutine(EjectCoroutine());
         }
@@ -398,7 +407,7 @@ namespace EscapeED
 
         private System.Collections.IEnumerator EjectCoroutine()
         {
-            isEjecting = true;
+            State = ArrowState.Ejecting;
 
             int n = originalPositions.Count;
 
@@ -493,10 +502,11 @@ namespace EscapeED
 
         public void OnInteract()
         {
-            if (!isEjecting)
-            {
-                OnInteractionTriggered?.Invoke(this);
-            }
+            // Level-up: Strict interaction guard. We only process input if the arrow is completely stationary.
+            // This prevents "sliding" physics bugs where collisions are calculated from mid-transition offsets.
+            if (State != ArrowState.Idle || isFrozen) return;
+
+            OnInteractionTriggered?.Invoke(this);
         }
 
         public void GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal)
@@ -515,13 +525,15 @@ namespace EscapeED
 
         public void PlayBlockedAnimation()
         {
-            if (isEjecting) return;
+            if (State != ArrowState.Idle) return;
             if (activeShake != null) StopCoroutine(activeShake);
             activeShake = StartCoroutine(BlockedShakeCoroutine());
         }
 
         private System.Collections.IEnumerator BlockedShakeCoroutine()
         {
+            State = ArrowState.Blocked; // Lock state
+
             GetEjectionData(out _, out Vector3 tipDir, out _);
             Vector3 startPos = transform.localPosition;
             
@@ -536,8 +548,11 @@ namespace EscapeED
                 transform.localPosition = startPos + transform.InverseTransformDirection(tipDir) * offset;
                 yield return null;
             }
+            
             transform.localPosition = startPos;
             activeShake = null;
+            
+            State = ArrowState.Idle; // Release state lock
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────
