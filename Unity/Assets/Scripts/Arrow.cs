@@ -1,12 +1,13 @@
 using UnityEngine;
 using System.Collections.Generic;
+using EscapeED.InputHandling;
 
 namespace EscapeED
 {
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
     [RequireComponent(typeof(MeshCollider))]
-    public class Arrow : MonoBehaviour
+    public class Arrow : MonoBehaviour, IInteractable
     {
         [Header("Visuals")]
         public Material arrowMaterial;       // ArrowPulseMat   — ZTest LEqual (on cube)
@@ -31,23 +32,11 @@ namespace EscapeED
         private List<DotType>      originalDotTypes;
         private bool               isEjecting = false;
 
-        private List<Vector3> verts       = new List<Vector3>(512);
-        private List<int>     tris        = new List<int>(1024);
-        private List<Vector2> uvs         = new List<Vector2>(512);
-        private List<Vector2> uv2s        = new List<Vector2>(512);
-        private List<Vector3> meshNormals = new List<Vector3>(512);
-
         void Awake()
         {
             mf = GetComponent<MeshFilter>();
             mr = GetComponent<MeshRenderer>();
             mc = GetComponent<MeshCollider>();
-            
-            // Create a unique mesh instance for this arrow
-            mesh = new Mesh { name = "ArrowMesh_" + name };
-            mesh.MarkDynamic(); // Optimization for frequent updates
-            mf.mesh = mesh;
-
             if (arrowMaterial != null) mr.material = arrowMaterial;
         }
 
@@ -63,8 +52,9 @@ namespace EscapeED
                 originalDotTypes  = new List<DotType>(dotTypes);
             }
 
-            if (arrowMaterial != null && !isEjecting && mr.sharedMaterial != arrowMaterial) 
-                mr.material = arrowMaterial;
+            if (mf == null) mf = GetComponent<MeshFilter>();
+            if (mr == null) mr = GetComponent<MeshRenderer>();
+            if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
 
             // Calculate dynamic arrowhead dimensions
             tipLength = lineWidth * tipLengthMult;
@@ -186,9 +176,11 @@ namespace EscapeED
                 Vector3 innerA = center + rightIn  * insideSign * halfW;
                 Vector3 innerB = center + rightOut * insideSign * halfW;
                 int ti = verts.Count;
-                verts.Add(center); verts.Add(innerA); verts.Add(innerB);
-                uvs.Add(new Vector2(u, 0.5f)); uvs.Add(new Vector2(u, 0f)); uvs.Add(new Vector2(u, 1f));
-                tris.Add(ti); tris.Add(ti+1); tris.Add(ti+2);
+                verts.AddRange(new[] { center, innerA, innerB });
+                uvs.AddRange(new[] {
+                    new Vector2(u, 0.5f), new Vector2(u, 0f), new Vector2(u, 1f)
+                });
+                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
                 meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
             }
 
@@ -221,9 +213,13 @@ namespace EscapeED
                     Vector3 baseR   = basePos + right * tipHalfWidth + lift;
 
                     int ti = verts.Count;
-                    verts.Add(apex); verts.Add(baseL); verts.Add(baseR);
-                    uvs.Add(new Vector2(uBase, 0.5f)); uvs.Add(new Vector2(uBase, 0f)); uvs.Add(new Vector2(uBase, 1f));
-                    tris.Add(ti); tris.Add(ti+1); tris.Add(ti+2);
+                    verts.AddRange(new[] { apex, baseL, baseR });
+                    uvs.AddRange(new[] {
+                        new Vector2(uBase, 0.5f),
+                        new Vector2(uBase, 0f),
+                        new Vector2(uBase, 1f)
+                    });
+                    tris.AddRange(new[] { ti, ti+1, ti+2 });
                     meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
                 }
             }
@@ -238,9 +234,13 @@ namespace EscapeED
                 Vector3 baseR = tipPos + tipRight * tipHalfWidth + tipLift;
 
                 int ti = verts.Count;
-                verts.Add(apex); verts.Add(baseL); verts.Add(baseR);
-                uvs.Add(new Vector2(1f, 0.5f)); uvs.Add(new Vector2(uBase, 0f)); uvs.Add(new Vector2(uBase, 1f));
-                tris.Add(ti); tris.Add(ti+1); tris.Add(ti+2);
+                verts.AddRange(new[] { apex, baseL, baseR });
+                uvs.AddRange(new[] {
+                    new Vector2(1f, 0.5f),
+                    new Vector2(uBase, 0f),
+                    new Vector2(uBase, 1f)
+                });
+                tris.AddRange(new[] { ti, ti+1, ti+2 });
                 meshNormals.Add(tipNormal); meshNormals.Add(tipNormal); meshNormals.Add(tipNormal);
             }
 
@@ -248,16 +248,16 @@ namespace EscapeED
             for (int vi = 0; vi < meshNormals.Count; vi++)
                 uv2s.Add(new Vector2(FaceIndexFromNormal(meshNormals[vi]), 0f));
 
-            // ── Apply to Mesh ──
-            mesh.Clear();
-            mesh.SetVertices(verts);
-            mesh.SetTriangles(tris, 0);
-            mesh.SetUVs(0, uvs);
-            mesh.SetUVs(1, uv2s);
-            mesh.SetNormals(meshNormals);
+            Mesh mesh = new Mesh { name = "Arrow_" + name };
+            mesh.vertices  = verts.ToArray();
+            mesh.triangles = tris.ToArray();
+            mesh.uv        = uvs.ToArray();
+            mesh.uv2       = uv2s;
+            mesh.normals   = meshNormals.ToArray();
             mesh.RecalculateBounds();
-
-            if (mc != null && (mc.sharedMesh == null || !isEjecting)) mc.sharedMesh = mesh;
+            mf.mesh = mesh;
+            if (mc == null) mc = GetComponent<MeshCollider>();
+            if (mc != null) mc.sharedMesh = mesh;
         }
 
         [ContextMenu("Eject Arrow")]
@@ -334,6 +334,59 @@ namespace EscapeED
             Destroy(gameObject);
         }
 
+        // ── Interaction Helpers ───────────────────────────────────────────────────
+
+        public event System.Action<Arrow> OnInteractionTriggered;
+
+        public void OnInteract()
+        {
+            if (!isEjecting)
+            {
+                OnInteractionTriggered?.Invoke(this);
+            }
+        }
+
+        public void GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal)
+        {
+            if (originalPositions == null || originalPositions.Count < 2)
+            {
+                tipPos = transform.position; tipDir = transform.forward; faceNormal = transform.up;
+                return;
+            }
+            int n = originalPositions.Count;
+            tipPos = transform.TransformPoint(originalPositions[n - 1]);
+            Vector3 preTip = transform.TransformPoint(originalPositions[n - 2]);
+            tipDir = (tipPos - preTip).normalized;
+            faceNormal = transform.TransformDirection(PrimaryNormal(originalNormals[n - 1]));
+        }
+
+        public void PlayBlockedAnimation()
+        {
+            if (isEjecting) return;
+            if (activeShake != null) StopCoroutine(activeShake);
+            activeShake = StartCoroutine(BlockedShakeCoroutine());
+        }
+
+        private System.Collections.IEnumerator BlockedShakeCoroutine()
+        {
+            GetEjectionData(out _, out Vector3 tipDir, out _);
+            Vector3 startPos = transform.localPosition;
+            
+            float duration = 0.15f;
+            float elapsed = 0f;
+            while(elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = elapsed / duration;
+                // A quick push forward and snap back using sine wave
+                float offset = Mathf.Sin(t * Mathf.PI) * (lineWidth * 1.5f); 
+                transform.localPosition = startPos + transform.InverseTransformDirection(tipDir) * offset;
+                yield return null;
+            }
+            transform.localPosition = startPos;
+            activeShake = null;
+        }
+
         // --- Static Helpers ---
 
         static void AddBendArc(Vector3 center, Vector3 fromVec, Vector3 toVec, Vector3 faceN, float radius, float u, List<Vector3> verts, List<int> tris, List<Vector2> uvs, List<Vector3> normals) {
@@ -349,7 +402,9 @@ namespace EscapeED
                 verts.Add(center + (basisU * Mathf.Cos(a) + basisV * Mathf.Sin(a)) * radius);
                 uvs.Add(new Vector2(u, 0.5f)); normals.Add(faceN);
             }
-            for (int s = 0; s < steps; s++) { tris.Add(centerIdx); tris.Add(arcStart + s); tris.Add(arcStart + s + 1); }
+
+            for (int s = 0; s < steps; s++)
+                tris.AddRange(new[] { centerIdx, arcStart + s, arcStart + s + 1 });
         }
 
         static bool IsFoldSeg(int i, List<List<Vector3>> allNormals, List<DotType> dotTypes) {
@@ -404,15 +459,35 @@ namespace EscapeED
             Vector3 apex = tipPos + apexLift; Vector3 basePos = tipPos - tipDir * length; Vector3 baseCenter = basePos + edgeLift;
             Vector3 wing1 = basePos + in1 * width + n1 * offset; Vector3 wing2 = basePos + in2 * width + n2 * offset;
             float uBack = Mathf.Max(0f, uBase - length / (length + 0.001f) * uBase);
-            int ti = verts.Count; verts.Add(apex); verts.Add(wing1); verts.Add(baseCenter);
-            uvs.Add(new Vector2(uBase, 0.5f)); uvs.Add(new Vector2(uBack, 0f)); uvs.Add(new Vector2(uBack, 1f));
-            tris.Add(ti); tris.Add(ti+1); tris.Add(ti+2); normals.Add(n1); normals.Add(n1); normals.Add(n1);
-            ti = verts.Count; verts.Add(apex); verts.Add(baseCenter); verts.Add(wing2);
-            uvs.Add(new Vector2(uBase, 0.5f)); uvs.Add(new Vector2(uBack, 1f)); uvs.Add(new Vector2(uBack, 0f));
-            tris.Add(ti); tris.Add(ti+1); tris.Add(ti+2); normals.Add(n2); normals.Add(n2); normals.Add(n2);
+
+            // Face 1 triangle
+            int ti = verts.Count;
+            verts.AddRange(new[] { apex, wing1, baseCenter });
+            uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 0f), new Vector2(uBack, 1f) });
+            tris.AddRange(new[] { ti, ti+1, ti+2 });
+            normals.Add(n1); normals.Add(n1); normals.Add(n1);
+
+            // Face 2 triangle
+            ti = verts.Count;
+            verts.AddRange(new[] { apex, baseCenter, wing2 });
+            uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 1f), new Vector2(uBack, 0f) });
+            tris.AddRange(new[] { ti, ti+1, ti+2 });
+            normals.Add(n2); normals.Add(n2); normals.Add(n2);
+
         }
 
-        static void AddFoldedRoundCap(Vector3 center, List<Vector3> faces, float radius, int segments, float u, float offset, List<Vector3> verts, List<int> tris, List<Vector2> uvs, List<Vector3> normals) {
+        /// <summary>
+        /// Per-face arc generator with exact seam boundaries.
+        /// Builds a per-face 2D basis so arcs lie correctly in each face's plane —
+        /// no projection step, so no degenerate collapse on non-primary faces.
+        /// Seam endpoints are pinned to exact Cross(faceN, otherN) directions
+        /// so adjacent face arcs share identical 3D boundary vertices.
+        /// </summary>
+        static void AddFoldedRoundCap(
+            Vector3 center, List<Vector3> faces, float radius, int segments, float u, float offset,
+            List<Vector3> verts, List<int> tris,
+            List<Vector2> uvs, List<Vector3> normals)
+        {
             if (faces == null || faces.Count == 0) return;
             foreach (var faceN in faces) {
                 Vector3 basisU = Vector3.Cross(faceN, Vector3.up); if (basisU.sqrMagnitude < 0.001f) basisU = Vector3.Cross(faceN, Vector3.forward);
@@ -432,16 +507,41 @@ namespace EscapeED
                     foreach (var otherN in faces) if (otherN != faceN && Mathf.Abs(Vector3.Dot(dir, otherN)) < 0.05f) vFaces.Add(otherN);
                     verts.Add(center + dir * radius + GetCorrectedLift(vFaces, offset)); uvs.Add(new Vector2(u, 0.5f)); normals.Add(faceN); arcCount++;
                 }
-                for (int i = 0; i < arcCount - 1; i++) { tris.Add(centerIdx); tris.Add(arcStart + i); tris.Add(arcStart + i + 1); }
+
+                for (int i = 0; i < arcCount - 1; i++)
+                {
+                    tris.Add(centerIdx); tris.Add(arcStart + i); tris.Add(arcStart + i + 1);
+                }
             }
         }
 
-        static float Atan2Basis(Vector3 dir, Vector3 u, Vector3 v) { float a = Mathf.Atan2(Vector3.Dot(dir, v), Vector3.Dot(dir, u)); return a < 0f ? a + Mathf.PI * 2f : a; }
-        static void InsertAngle(List<float> list, float a, float eps = 0.001f) { foreach (var x in list) if (Mathf.Abs(x - a) < eps) return; list.Add(a); }
-        static void AddQuad(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3, Vector3 n0, Vector3 n1, Vector3 n2, Vector3 n3, float u0, float u1, List<Vector3> verts, List<int> tris, List<Vector2> uvs, List<Vector3> normals) {
-            int bi = verts.Count; verts.Add(v0); verts.Add(v1); verts.Add(v2); verts.Add(v3);
-            uvs.Add(new Vector2(u0, 0f)); uvs.Add(new Vector2(u0, 1f)); uvs.Add(new Vector2(u1, 1f)); uvs.Add(new Vector2(u1, 0f));
-            tris.Add(bi); tris.Add(bi+1); tris.Add(bi+2); tris.Add(bi); tris.Add(bi+2); tris.Add(bi+3);
+        static float Atan2Basis(Vector3 dir, Vector3 u, Vector3 v)
+        {
+            float a = Mathf.Atan2(Vector3.Dot(dir, v), Vector3.Dot(dir, u));
+            return a < 0f ? a + Mathf.PI * 2f : a;
+        }
+
+        static void InsertAngle(List<float> list, float a, float eps = 0.001f)
+        {
+            foreach (var x in list) if (Mathf.Abs(x - a) < eps) return;
+            list.Add(a);
+        }
+
+        /// <summary>Adds a quad with both winding orders (visible from inside and outside).</summary>
+        static void AddQuad(
+            Vector3 v0, Vector3 v1, Vector3 v2, Vector3 v3,
+            Vector3 n0, Vector3 n1, Vector3 n2, Vector3 n3,
+            float u0, float u1,
+            List<Vector3> verts, List<int> tris,
+            List<Vector2> uvs, List<Vector3> normals)
+        {
+            int bi = verts.Count;
+            verts.AddRange(new[] { v0, v1, v2, v3 });
+            uvs.AddRange(new[] {
+                new Vector2(u0, 0f), new Vector2(u0, 1f),
+                new Vector2(u1, 1f), new Vector2(u1, 0f)
+            });
+            tris.AddRange(new[] { bi, bi+1, bi+2,  bi, bi+2, bi+3 });
             normals.Add(n0); normals.Add(n1); normals.Add(n2); normals.Add(n3);
         }
     }
