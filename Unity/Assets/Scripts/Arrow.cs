@@ -71,16 +71,16 @@ namespace EscapeED
         {
             if (positions.Count < 2) return;
 
-            // 1. Snapshot / Cache state for animation
+            // 2. Setup Context (must come first — ctx.localPos is used for the snapshot)
+            var ctx = CreateBuildContext(positions, allNormals, dotTypes);
+
+            // 1. Snapshot in LOCAL space so GetEjectionData and animations stay correct after cube rotation
             if (!isEjecting && !isAnimating)
             {
-                originalPositions = new List<Vector3>(positions);
+                originalPositions = new List<Vector3>(ctx.localPos);
                 originalNormals   = ArrowAnimator.DeepCopyNormals(allNormals);
                 originalDotTypes  = new List<DotType>(dotTypes);
             }
-
-            // 2. Setup Context
-            var ctx = CreateBuildContext(positions, allNormals, dotTypes);
 
             // 3. Execution Pipeline (Delegated to ArrowMeshBuilder)
             ArrowMeshBuilder.BuildBody(ctx);

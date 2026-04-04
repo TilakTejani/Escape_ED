@@ -259,7 +259,7 @@ namespace EscapeED
             Vector3 p1 = tipPos + faceNormal * arrow.surfaceOffset;
             Vector3 p2 = p1 + tipDir * checkDistance;
 
-            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, arrowLayer);
+            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, LayerMask.GetMask(ArrowConstants.LAYER_ARROW));
 
             for (int i = 0; i < hitCount; i++)
             {
