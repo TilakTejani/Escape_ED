@@ -17,6 +17,7 @@ namespace EscapeED
         [Header("References")]
         public CubeGrid grid;
         public bool forceWhiteBackground = true; 
+        public LayerMask arrowLayer; // Use Layer 6 (Arrow) in Inspector
         public CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
@@ -67,8 +68,19 @@ namespace EscapeED
             }
             else
             {
-                Debug.LogWarning("[LevelManager] No JSON assigned. Falling back to procedural.");
-                GenerateProceduralLevel();
+                // [Mobile Fix] Check Resources if no Inspector file is assigned
+                TextAsset resourcesJson = Resources.Load<TextAsset>("Levels/5x5x5");
+                if (resourcesJson != null)
+                {
+                    Debug.Log("<color=green>[LevelManager] Loading 5x5x5.json from Resources Success!</color>");
+                    grid.GenerateGrid();
+                    LoadLevelFromJSON(resourcesJson);
+                }
+                else
+                {
+                    Debug.LogWarning("[LevelManager] No JSON found in Inspector or Resources. Falling back to procedural.");
+                    GenerateProceduralLevel();
+                }
             }
         }
 
@@ -146,6 +158,7 @@ namespace EscapeED
 
             if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
             arrow.SetPath(worldPath, allNormals, dotTypes);
+            arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(arrowObj);
 
             if (ghostController != null)
@@ -155,7 +168,7 @@ namespace EscapeED
         private void ClearActiveLevel()
         {
             foreach (var arrow in activeArrows)
-                if (arrow != null) DestroyImmediate(arrow);
+                if (arrow != null) Destroy(arrow);
             activeArrows.Clear();
             if (ghostController != null) ghostController.ClearArrows();
         }
@@ -213,7 +226,7 @@ namespace EscapeED
 
         void Start()
         {
-            // Keep original environment styling
+            // Apply Environment Styling (Plain White Background)
             if (forceWhiteBackground)
             {
                 Camera cam = Camera.main;
@@ -224,7 +237,15 @@ namespace EscapeED
                 }
             }
 
-            // Note: GameState change is now handled by UIManager/HomeScreenView
+            // Note: GameState change is now handled by UIManager/HomeScreenView in Mobile Flow
+
+            if (levelJsonFile != null)
+            {
+                if (grid == null) grid = GetComponent<CubeGrid>();
+                grid.GenerateGrid();
+                LoadLevelFromJSON(levelJsonFile);
+                Debug.Log("[LevelManager] Auto-loaded level on Start.");
+            }
         }
 
         void Update()
@@ -235,35 +256,53 @@ namespace EscapeED
                 TestAllEjections();
                 return;
             }
+        }
 
-            // Single tap — raycast to find and eject the tapped arrow
-            bool tapped = false;
-            Vector2 tapPos = Vector2.zero;
+        private void HandleArrowInteraction(Arrow arrow)
+        {
+            if (arrow == null || arrow.IsEjecting) return;
 
-            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+            if (IsArrowBlocked(arrow))
             {
-                tapped = true;
-                tapPos = Touchscreen.current.primaryTouch.position.ReadValue();
+                arrow.PlayBlockedAnimation();
             }
-            else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            else
             {
-                tapped = true;
-                tapPos = Mouse.current.position.ReadValue();
+                arrow.Eject();
+                activeArrows.Remove(arrow.gameObject);
             }
+        }
 
-            if (tapped)
+        // Zero-GC Mobile Optimization for Overlap Queries
+        private Collider[] overlapResults = new Collider[30];
+
+        private bool IsArrowBlocked(Arrow arrow)
+        {
+            arrow.GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal);
+
+            // 0.95f safety margin to allow corner-kiss without grazing side obstacles
+            float radius        = (arrow.lineWidth * 0.5f) * 0.95f;
+            float checkDistance = grid != null ? Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing : 20f;
+
+            // p1 at tip surface, p2 extends full grid width along eject direction
+            Vector3 p1 = tipPos + faceNormal * arrow.surfaceOffset;
+            Vector3 p2 = p1 + tipDir * checkDistance;
+
+            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, LayerMask.GetMask(ArrowConstants.LAYER_ARROW));
+
+            for (int i = 0; i < hitCount; i++)
             {
-                Ray ray = Camera.main.ScreenPointToRay(tapPos);
-                if (Physics.Raycast(ray, out RaycastHit hit))
-                {
-                    Arrow arrow = hit.collider.GetComponent<Arrow>();
-                    if (arrow != null)
-                    {
-                        arrow.Eject();
-                        activeArrows.Remove(arrow.gameObject);
-                    }
-                }
+                Collider hitCollider = overlapResults[i];
+                if (hitCollider == null) continue;
+
+                // Ignore own body segments
+                if (hitCollider.transform.IsChildOf(arrow.transform)) continue;
+
+                Arrow hitArrow = hitCollider.GetComponentInParent<Arrow>();
+                if (hitArrow != null && hitArrow != arrow && !hitArrow.IsEjecting)
+                    return true;
             }
+            return false;
         }
 
         public void OnJumpPressed(InputAction.CallbackContext context)
@@ -327,12 +366,13 @@ namespace EscapeED
 
             foreach (var p in gridPath)
             {
-                worldPoints.Add(grid.CalculateWorldPos(p.x, p.y, p.z));
+                worldPoints.Add(grid.transform.TransformPoint(grid.CalculateWorldPos(p.x, p.y, p.z)));
                 allNormals.Add(grid.GetAllFaceNormals(p));
                 dotTypes.Add(grid.GetDotType(p));
             }
 
             arrow.SetPath(worldPoints, allNormals, dotTypes);
+            arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(obj);
 
             if (ghostController != null)
