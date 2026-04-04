@@ -1,12 +1,12 @@
 using UnityEngine;
 using System.Collections.Generic;
-using EscapeED.InputHandling;
 
 namespace EscapeED
 {
     [RequireComponent(typeof(MeshFilter))]
     [RequireComponent(typeof(MeshRenderer))]
-    public class Arrow : MonoBehaviour, IInteractable
+    [RequireComponent(typeof(MeshCollider))]
+    public class Arrow : MonoBehaviour
     {
         [Header("Visuals")]
         public Material arrowMaterial;       // ArrowPulseMat   — ZTest LEqual (on cube)
@@ -23,24 +23,18 @@ namespace EscapeED
 
         private MeshFilter   mf;
         private MeshRenderer mr;
-        private List<GameObject> activeSegmentObjects = new List<GameObject>();
+        private MeshCollider mc;
 
         private List<Vector3>      originalPositions;
         private List<List<Vector3>> originalNormals;
         private List<DotType>      originalDotTypes;
         private bool               isEjecting = false;
-        public  bool               IsEjecting => isEjecting;
-        private Coroutine          activeShake;
 
         void Awake()
         {
             mf = GetComponent<MeshFilter>();
             mr = GetComponent<MeshRenderer>();
-
-            // Automatically set layer to "Arrow" so it's detectable by the LevelManager's LayerMask
-            int arrowLayer = LayerMask.NameToLayer("Arrow");
-            if (arrowLayer != -1) gameObject.layer = arrowLayer;
-
+            mc = GetComponent<MeshCollider>();
             if (arrowMaterial != null) mr.material = arrowMaterial;
         }
 
@@ -51,7 +45,7 @@ namespace EscapeED
         ///   - 2 normals → edge vertex            → fold when both ends share the same edge
         /// </summary>
         public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes)
-         {
+        {
             if (positions.Count < 2) return;
 
             // Only cache original data if we aren't currently animating/ejecting
@@ -65,15 +59,6 @@ namespace EscapeED
             if (mf == null) mf = GetComponent<MeshFilter>();
             if (mr == null) mr = GetComponent<MeshRenderer>();
             if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
-
-            // Reuse existing mesh instance to prevent memory leaks during animation
-            if (mf.sharedMesh == null) 
-            {
-                mf.sharedMesh = new Mesh { name = "Arrow_" + name };
-                mf.sharedMesh.MarkDynamic();
-            }
-            Mesh mesh = mf.sharedMesh;
-            mesh.Clear();
 
             // Calculate dynamic arrowhead dimensions
             tipLength = lineWidth * tipLengthMult;
@@ -218,8 +203,7 @@ namespace EscapeED
                 uvs.AddRange(new[] {
                     new Vector2(u, 0.5f), new Vector2(u, 0f), new Vector2(u, 1f)
                 });
-                // Correct Winding: 1, 2, 0 for Clockwise/Outward from Center
-                tris.AddRange(new[] { ti + 1, ti + 2, ti });
+                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
                 meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
             }
 
@@ -261,10 +245,9 @@ namespace EscapeED
                     uvs.AddRange(new[] {
                         new Vector2(uBase, 0.5f),
                         new Vector2(uBase, 0f),
-                        new Vector2(0.5f, 1f)
+                        new Vector2(uBase, 1f)
                     });
-                    // Correct Winding: Outward (baseR -> baseL -> apex)
-                    tris.AddRange(new[] { ti + 2, ti + 1, ti });
+                    tris.AddRange(new[] { ti, ti+1, ti+2 });
                     meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
                 }
             }
@@ -286,8 +269,7 @@ namespace EscapeED
                     new Vector2(uBase, 0f),
                     new Vector2(uBase, 1f)
                 });
-                // Winding: baseR -> baseL -> apex
-                tris.AddRange(new[] { ti + 2, ti + 1, ti });
+                tris.AddRange(new[] { ti, ti+1, ti+2 });
                 meshNormals.Add(tipNormal); meshNormals.Add(tipNormal); meshNormals.Add(tipNormal);
             }
 
@@ -297,103 +279,24 @@ namespace EscapeED
             for (int vi = 0; vi < meshNormals.Count; vi++)
                 uv2s[vi] = new Vector2(FaceIndexFromNormal(meshNormals[vi]), 0f);
 
+            Mesh mesh = new Mesh { name = "Arrow_" + name };
             mesh.vertices  = verts.ToArray();
             mesh.triangles = tris.ToArray();
             mesh.uv        = uvs.ToArray();
             mesh.uv2       = uv2s;
             mesh.normals   = meshNormals.ToArray();
             mesh.RecalculateBounds();
-            mf.sharedMesh = mesh;
-
-            // ── Update Box Colliders ──────────────────────────────────────────────
-            UpdateSegmentColliders(localPos, allNormals, dotTypes);
-            
+            mf.mesh = mesh;
+            if (mc == null) mc = GetComponent<MeshCollider>();
+            if (mc != null) mc.sharedMesh = mesh;
         }
 
         [ContextMenu("Eject Arrow")]
         public void Eject()
         {
             if (isEjecting) return;
-            foreach(var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
+            if (mc != null) mc.enabled = false;
             StartCoroutine(EjectCoroutine());
-        }
-
-        private void UpdateSegmentColliders(List<Vector3> localPos, List<List<Vector3>> allNormals, List<DotType> dotTypes)
-        {
-            foreach (var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
-
-            int segIndex = 0;
-            int n = localPos.Count;
-            for (int i = 0; i < n - 1; i++)
-            {
-                Vector3 start = localPos[i];
-                Vector3 end = localPos[i + 1];
-                float length = Vector3.Distance(start, end);
-
-                if (length < 0.001f) continue;
-
-                Vector3 center = (start + end) / 2f;
-                Vector3 dir = (end - start).normalized;
-
-                // Try to get a valid face normal for the 'up' direction of the box
-                Vector3 faceN = PrimaryNormal(allNormals[i]);
-                if (dotTypes[i] != DotType.Face && dotTypes[i + 1] == DotType.Face)
-                    faceN = PrimaryNormal(allNormals[i + 1]);
-
-                Quaternion rot = Quaternion.LookRotation(dir, faceN);
-
-                GameObject segmentObj = null;
-                BoxCollider col = null;
-
-                if (segIndex < activeSegmentObjects.Count)
-                {
-                    segmentObj = activeSegmentObjects[segIndex];
-                    if (segmentObj != null)
-                    {
-                        segmentObj.SetActive(true);
-                        col = segmentObj.GetComponent<BoxCollider>();
-                    }
-                }
-                
-                if (segmentObj == null)
-                {
-                    segmentObj = new GameObject($"SegmentCollider_{segIndex}");
-                    segmentObj.transform.SetParent(this.transform, false);
-                    segmentObj.layer = this.gameObject.layer;
-                    col = segmentObj.AddComponent<BoxCollider>();
-                    if (segIndex < activeSegmentObjects.Count)
-                        activeSegmentObjects[segIndex] = segmentObj;
-                    else
-                        activeSegmentObjects.Add(segmentObj);
-                }
-
-                segmentObj.transform.localPosition = center;
-                segmentObj.transform.localRotation = rot;
-
-                // Center is local to the segment object, lift it up by the surface offset
-                col.center = new Vector3(0, surfaceOffset, 0);
-                col.size = new Vector3(lineWidth, lineWidth, length);
-
-                segIndex++;
-            }
-        }
-
-        private void OnDrawGizmosSelected()
-        {
-            if (activeSegmentObjects == null) return;
-            Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
-            foreach (var seg in activeSegmentObjects)
-            {
-                if (seg == null || !seg.activeSelf) continue;
-                BoxCollider col = seg.GetComponent<BoxCollider>();
-                if (col == null) continue;
-                
-                Gizmos.matrix = seg.transform.localToWorldMatrix;
-                Gizmos.DrawCube(col.center, col.size);
-                Gizmos.color = Color.green;
-                Gizmos.DrawWireCube(col.center, col.size);
-                Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
-            }
         }
 
         private System.Collections.IEnumerator EjectCoroutine()
@@ -487,59 +390,6 @@ namespace EscapeED
             Destroy(gameObject);
         }
 
-        // ── Interaction Helpers ───────────────────────────────────────────────────
-
-        public event System.Action<Arrow> OnInteractionTriggered;
-
-        public void OnInteract()
-        {
-            if (!isEjecting)
-            {
-                OnInteractionTriggered?.Invoke(this);
-            }
-        }
-
-        public void GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal)
-        {
-            if (originalPositions == null || originalPositions.Count < 2)
-            {
-                tipPos = transform.position; tipDir = transform.forward; faceNormal = transform.up;
-                return;
-            }
-            int n = originalPositions.Count;
-            tipPos = transform.TransformPoint(originalPositions[n - 1]);
-            Vector3 preTip = transform.TransformPoint(originalPositions[n - 2]);
-            tipDir = (tipPos - preTip).normalized;
-            faceNormal = transform.TransformDirection(PrimaryNormal(originalNormals[n - 1]));
-        }
-
-        public void PlayBlockedAnimation()
-        {
-            if (isEjecting) return;
-            if (activeShake != null) StopCoroutine(activeShake);
-            activeShake = StartCoroutine(BlockedShakeCoroutine());
-        }
-
-        private System.Collections.IEnumerator BlockedShakeCoroutine()
-        {
-            GetEjectionData(out _, out Vector3 tipDir, out _);
-            Vector3 startPos = transform.localPosition;
-            
-            float duration = 0.15f;
-            float elapsed = 0f;
-            while(elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                // A quick push forward and snap back using sine wave
-                float offset = Mathf.Sin(t * Mathf.PI) * (lineWidth * 1.5f); 
-                transform.localPosition = startPos + transform.InverseTransformDirection(tipDir) * offset;
-                yield return null;
-            }
-            transform.localPosition = startPos;
-            activeShake = null;
-        }
-
         // ── Helpers ───────────────────────────────────────────────────────────────
 
         // Fills the outer convex gap at a bend with a circular arc fan.
@@ -576,7 +426,7 @@ namespace EscapeED
             }
 
             for (int s = 0; s < steps; s++)
-                tris.AddRange(new[] { centerIdx, arcStart + s + 1, arcStart + s });
+                tris.AddRange(new[] { centerIdx, arcStart + s, arcStart + s + 1 });
         }
 
         // Returns true if segment i→i+1 crosses a cube edge (fold segment).
@@ -750,23 +600,14 @@ namespace EscapeED
             int ti = verts.Count;
             verts.AddRange(new[] { apex, wing1, baseCenter });
             uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 0f), new Vector2(uBack, 1f) });
-            // Auto-detect winding for Face 1
-            if (Vector3.Dot(Vector3.Cross(wing1 - baseCenter, apex - baseCenter), n1) < 0)
-                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
-            else
-                tris.AddRange(new[] { ti + 2, ti + 1, ti }); // Default Winding (2, 1, 0)
+            tris.AddRange(new[] { ti, ti+1, ti+2 });
             normals.Add(n1); normals.Add(n1); normals.Add(n1);
 
             // Face 2 triangle
             ti = verts.Count;
             verts.AddRange(new[] { apex, baseCenter, wing2 });
             uvs.AddRange(new[] { new Vector2(uBase, 0.5f), new Vector2(uBack, 1f), new Vector2(uBack, 0f) });
-            
-            // Auto-detect winding for Face 2
-            if (Vector3.Dot(Vector3.Cross(baseCenter - wing2, apex - wing2), n2) < 0)
-                tris.AddRange(new[] { ti, ti + 1, ti + 2 });
-            else
-                tris.AddRange(new[] { ti + 2, ti + 1, ti }); // Default Winding (2, 1, 0)
+            tris.AddRange(new[] { ti, ti+1, ti+2 });
             normals.Add(n2); normals.Add(n2); normals.Add(n2);
 
         }
@@ -847,7 +688,7 @@ namespace EscapeED
 
                 for (int i = 0; i < arcCount - 1; i++)
                 {
-                    tris.Add(centerIdx); tris.Add(arcStart + i + 1); tris.Add(arcStart + i);
+                    tris.Add(centerIdx); tris.Add(arcStart + i); tris.Add(arcStart + i + 1);
                 }
             }
         }

@@ -17,11 +17,10 @@ namespace EscapeED
         [Header("References")]
         public CubeGrid grid;
         public bool forceWhiteBackground = true; 
-        public LayerMask arrowLayer; // Use Layer 6 (Arrow) in Inspector
-        private CubeNavigator navigator;
+        public CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
-        private GhostCubeController   ghostController;
+        public GhostCubeController   ghostController;
 
         private void OnEnable()
         {
@@ -147,7 +146,6 @@ namespace EscapeED
 
             if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
             arrow.SetPath(worldPath, allNormals, dotTypes);
-            arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(arrowObj);
 
             if (ghostController != null)
@@ -215,7 +213,7 @@ namespace EscapeED
 
         void Start()
         {
-            // Apply Environment Styling (Plain White Background)
+            // Keep original environment styling
             if (forceWhiteBackground)
             {
                 Camera cam = Camera.main;
@@ -225,6 +223,8 @@ namespace EscapeED
                     cam.backgroundColor = Color.white;
                 }
             }
+
+            // Note: GameState change is now handled by UIManager/HomeScreenView
         }
 
         void Update()
@@ -235,97 +235,35 @@ namespace EscapeED
                 TestAllEjections();
                 return;
             }
-        }
 
-        private void HandleArrowInteraction(Arrow arrow)
-        {
-            if (arrow == null || arrow.IsEjecting) return;
+            // Single tap — raycast to find and eject the tapped arrow
+            bool tapped = false;
+            Vector2 tapPos = Vector2.zero;
 
-            if (IsArrowBlocked(arrow))
+            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
             {
-                arrow.PlayBlockedAnimation();
+                tapped = true;
+                tapPos = Touchscreen.current.primaryTouch.position.ReadValue();
             }
-            else
+            else if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
             {
-                arrow.Eject();
-                activeArrows.Remove(arrow.gameObject);
-            }
-        }
-
-        // Zero-GC Mobile Optimization for Overlap Queries
-        private Collider[] overlapResults = new Collider[30];
-
-        private bool IsArrowBlocked(Arrow arrow)
-        {
-            arrow.GetEjectionData(out Vector3 tipPos, out Vector3 tipDir, out Vector3 faceNormal);
-            
-            // Use OverlapCapsule instead of SphereCast.
-            // This treats the entire ejection path as one static volume check rather than a sweep that can clip tight edges.
-            
-            // 0.95f safety margin to allow Corner Kiss without grazing side obstacles
-            float radius = (arrow.lineWidth * 0.5f) * 0.95f; 
-            
-            float checkDistance = grid != null ? Mathf.Max(grid.size.x, grid.size.y, grid.size.z) * grid.spacing : 20f;
-
-            // By NOT pushing p1 forward, the capsule naturally bulges backwards slightly (by 'radius').
-            // This guarantees physical intersection with any flush blocking colliders directly in front of the tip.
-            // Our own body occupying the space right behind us is safely ignored via `IsChildOf`.
-            Vector3 p1 = tipPos + faceNormal * arrow.surfaceOffset;
-            Vector3 p2 = p1 + tipDir * checkDistance;
-
-            Debug.DrawLine(p1, p2, Color.cyan, 2f); // Visualizing the core spine of the capsule
-
-            // FORCE physics update in case BoxColliders were just moved
-            Physics.SyncTransforms();
-
-            // 🚨 DEBUG: Force checking ALL layers, not just arrowLayer
-            int hitCount = Physics.OverlapCapsuleNonAlloc(p1, p2, radius, overlapResults, ~0);
-            
-            // 🚨 DEBUG 2: Simple sphere test to see if ANYTHING is detectable around the tip
-            var testSphere = Physics.OverlapSphere(tipPos, 1f, ~0);
-
-            Debug.Log($"[DEBUGGING] 🏹 Ejecting {arrow.name} | Capsule Hits: {hitCount} | 1m Sphere Hits: {testSphere.Length} | p1: {p1}");
-
-            // 🚨 DEBUG 3: Are the BoxColliders even active in the scene?
-            if (hitCount == 0 && testSphere.Length == 0)
-            {
-                 var allBoxes = FindObjectsOfType<BoxCollider>();
-                 Debug.Log($"[DEBUGGING] Found {allBoxes.Length} total BoxColliders in the entire scene.");
-                 if (allBoxes.Length > 0) Debug.Log($"[DEBUGGING] First box: {allBoxes[0].name} | Layer: {allBoxes[0].gameObject.layer} | Enabled: {allBoxes[0].enabled}");
+                tapped = true;
+                tapPos = Mouse.current.position.ReadValue();
             }
 
-            for (int i = 0; i < hitCount; i++)
+            if (tapped)
             {
-                Collider hitCollider = overlapResults[i];
-                if (hitCollider == null) continue;
-
-                Debug.Log($"[DEBUGGING]    -> Raw Hit: {hitCollider.name} (Parent: {hitCollider.transform.parent?.name})");
-
-                // Ignore own body segments
-                if (hitCollider.transform.IsChildOf(arrow.transform)) 
+                Ray ray = Camera.main.ScreenPointToRay(tapPos);
+                if (Physics.Raycast(ray, out RaycastHit hit))
                 {
-                    Debug.Log("[DEBUGGING]       -> Ignored (Own body completely ignored)");
-                    continue;
-                }
-
-                Arrow hitArrow = hitCollider.GetComponentInParent<Arrow>();
-                if (hitArrow != null)
-                {
-                    if (hitArrow == arrow || hitArrow.IsEjecting)
+                    Arrow arrow = hit.collider.GetComponent<Arrow>();
+                    if (arrow != null)
                     {
-                        Debug.Log($"[DEBUGGING]       -> Ignored (Target {hitArrow.name} valid but ignored because it is self or ejecting)");
-                        continue;
+                        arrow.Eject();
+                        activeArrows.Remove(arrow.gameObject);
                     }
-
-                    Debug.Log($"[DEBUGGING] 🚨 Blocked! OverlapCapsule detected {hitArrow.name} intersecting {arrow.name}'s path.");
-                    return true;
-                }
-                else
-                {
-                    Debug.Log($"[DEBUGGING]       -> Ignored (No Arrow script found on parent)");
                 }
             }
-            return false;
         }
 
         public void OnJumpPressed(InputAction.CallbackContext context)
@@ -352,6 +290,15 @@ namespace EscapeED
         [ContextMenu("Generate Procedural Level")]
         public void GenerateProceduralLevel()
         {
+            if (grid == null)      grid      = GetComponent<CubeGrid>();
+            if (navigator == null) navigator = GetComponent<CubeNavigator>();
+            
+            if (grid == null || navigator == null)
+            {
+                Debug.LogError($"[LevelManager] FAILED: Grid({grid!=null}) or Navigator({navigator!=null}) missing!");
+                return;
+            }
+
             ClearActiveLevel();
 
             Vector3Int startPoint = Vector3Int.zero;
@@ -386,7 +333,6 @@ namespace EscapeED
             }
 
             arrow.SetPath(worldPoints, allNormals, dotTypes);
-            arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(obj);
 
             if (ghostController != null)
