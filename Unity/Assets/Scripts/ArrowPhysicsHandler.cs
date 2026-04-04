@@ -11,6 +11,7 @@ namespace EscapeED
     {
         private readonly Arrow _owner;
         private readonly List<BoxCollider> _segmentColliders = new List<BoxCollider>();
+        private readonly List<int>         _tipTris          = new List<int>(32);
         private MeshCollider _tipColliderComp;
         private Mesh         _tipColliderMesh;
 
@@ -96,12 +97,13 @@ namespace EscapeED
             _tipColliderMesh.Clear();
             _tipColliderMesh.SetVertices(tipVerts);
 
-            var tipTris = new List<int>((tipVerts.Count - 2) * 3);
+            _tipTris.Clear();
             for (int i = 1; i < tipVerts.Count - 1; i++)
             {
-                tipTris.Add(0); tipTris.Add(i); tipTris.Add(i + 1);
+                _tipTris.Add(0); _tipTris.Add(i); _tipTris.Add(i + 1);
             }
-            _tipColliderMesh.SetTriangles(tipTris, 0);
+            if (_tipTris.Count == 0) return;
+            _tipColliderMesh.SetTriangles(_tipTris, 0);
 
             _tipColliderComp.sharedMesh = null;
             _tipColliderComp.sharedMesh = _tipColliderMesh;

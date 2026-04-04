@@ -50,16 +50,22 @@ namespace EscapeED
             switch (state)
             {
                 case GameState.Init:
+                    // TODO: load persistent data, initialise services
                     break;
                 case GameState.MainMenu:
+                    // TODO: show main menu UI
                     break;
                 case GameState.Playing:
+                    // TODO: start level timer, enable input
                     break;
                 case GameState.Solving:
+                    // TODO: play solve animation, disable input
                     break;
                 case GameState.Success:
+                    // TODO: show success screen, unlock next level
                     break;
                 case GameState.Failure:
+                    // TODO: show failure screen, offer retry
                     break;
             }
         }

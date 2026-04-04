@@ -180,7 +180,8 @@ namespace EscapeED
             currentDistance = Mathf.Lerp(currentDistance, targetDistance, Time.deltaTime * zoomSmooth);
             
             // Move camera along its local Z relative to this object
-            Vector3 direction = (mainCamTransform.position - transform.position).normalized;
+            Vector3 offset = mainCamTransform.position - transform.position;
+            Vector3 direction = offset.sqrMagnitude > 1e-6f ? offset.normalized : Vector3.back;
             mainCamTransform.position = transform.position + direction * currentDistance;
         }
 

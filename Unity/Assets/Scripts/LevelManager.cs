@@ -274,7 +274,9 @@ namespace EscapeED
         }
 
         // Zero-GC Mobile Optimization for Overlap Queries
-        private Collider[] overlapResults = new Collider[30];
+        // Sized to max arrows any level could place — increase if levels grow larger
+        private const int MAX_OVERLAP_RESULTS = 64;
+        private Collider[] overlapResults = new Collider[MAX_OVERLAP_RESULTS];
 
         private bool IsArrowBlocked(Arrow arrow)
         {

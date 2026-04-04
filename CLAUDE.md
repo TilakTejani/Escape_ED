@@ -83,6 +83,15 @@ The arrow system is split across four files. Read all four before touching any:
 
 Violation: storing world positions in `originalPositions` causes double-transform after any cube rotation, producing wrong pathBuffer positions and a degenerate/invisible mesh during ejection.
 
+**`CreateBuildContext` — `lastValidDir` must use `localPos`, not `positions`:**
+```csharp
+// CORRECT
+Vector3 preTipDir = (localPos[n - 1] - localPos[n - 2]).normalized;
+// WRONG — positions may be world-space (useWorldSpace=true), causing tip to point wrong way after cube rotation
+Vector3 preTipDir = (positions[n - 1] - positions[n - 2]).normalized;
+```
+`lastValidDir` feeds into `ArrowMeshBuilder` which works entirely in local space. Mixing in a world-space direction causes arrowhead misalignment after any cube rotation.
+
 ### Modularization Pitfalls (learned the hard way)
 
 When splitting a monolithic file into modules, these functions were subtly broken and must match the original exactly:
