@@ -17,6 +17,24 @@ namespace EscapeED
             public List<Vector3> normals;
         }
 
+        /// <summary>
+        /// Generates a stable orthogonal 'right' vector relative to a normal and direction.
+        /// Prevents geometric collapse when direction and normal are parallel (common during world-space ejection).
+        /// </summary>
+        private static Vector3 GetSafeRight(Vector3 normal, Vector3 dir)
+        {
+            Vector3 right = Vector3.Cross(normal, dir);
+
+            if (right.sqrMagnitude < 1e-6f)
+            {
+                // Stability Fallback: Choose the most orthogonal axis to normal to prevent flipping.
+                Vector3 fallback = Mathf.Abs(normal.y) < 0.99f ? Vector3.up : Vector3.right;
+                right = Vector3.Cross(normal, fallback);
+            }
+
+            return right.normalized;
+        }
+
         public class Context
         {
             // Core Inputs
@@ -91,7 +109,8 @@ namespace EscapeED
                     if (dir.sqrMagnitude > ArrowConstants.EPS) ctx.lastValidDir = dir;
                     else                                       dir = ctx.lastValidDir;
 
-                    Vector3 right = Vector3.Cross(faceN, dir).normalized;
+                    // Robust basis calculation for face-based segments
+                    Vector3 right = GetSafeRight(faceN, dir);
                     Vector3 lift  = faceN * ctx.surfaceOffset;
 
                     AddQuad(a - right * halfW + lift, a + right * halfW + lift,
@@ -205,12 +224,21 @@ namespace EscapeED
             else
             {
                 Vector3 tipNormal = PrimaryNormal(ctx.allNormals[ctx.n - 1]);
-                Vector3 tipRight  = Vector3.Cross(tipNormal, tipDir).normalized;
+                // tipDir is already declared at line 162
+                Vector3 tipRight  = GetSafeRight(tipNormal, tipDir);
                 Vector3 tipLift   = tipNormal * ctx.surfaceOffset;
 
                 Vector3 apex  = tipPos + tipDir   * ctx.tipLength + tipLift;
                 Vector3 baseL = tipPos - tipRight * ctx.tipHalfWidth + tipLift;
                 Vector3 baseR = tipPos + tipRight * ctx.tipHalfWidth + tipLift;
+
+                // Symmetric Degenerate Triangle Guard: Prevent zero-area triangles if math collapses
+                if ((baseL - baseR).sqrMagnitude < 1e-6f)
+                {
+                    Vector3 offset = tipRight * 0.001f;
+                    baseL -= offset;
+                    baseR += offset;
+                }
 
                 int ti = ctx.verts.Count;
                 ctx.verts.AddRange(new[] { apex, baseL, baseR });

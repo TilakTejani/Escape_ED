@@ -99,7 +99,9 @@ namespace EscapeED
         public void FindCulprit()
         {
             Debug.Log("[GhostCube] Searching for solid renderers near the grid...");
-            var allRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
+
+            // Use the modern API that doesn't use the obsolete FindObjectsSortMode
+            MeshRenderer[] allRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var mr in allRenderers)
             {
                 // Skip our own faces
