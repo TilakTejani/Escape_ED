@@ -27,9 +27,16 @@ namespace EscapeED
 
             if (right.sqrMagnitude < 1e-6f)
             {
-                // Stability Fallback: Choose the most orthogonal axis to normal to prevent flipping.
-                Vector3 fallback = Mathf.Abs(normal.y) < 0.99f ? Vector3.up : Vector3.right;
-                right = Vector3.Cross(normal, fallback);
+                // Stability Fallback: Cycle all three world axes to find the most orthogonal to normal.
+                Vector3[] axes = { Vector3.up, Vector3.right, Vector3.forward };
+                float bestDot = float.MaxValue;
+                Vector3 bestAxis = Vector3.up;
+                foreach (var axis in axes)
+                {
+                    float d = Mathf.Abs(Vector3.Dot(normal, axis));
+                    if (d < bestDot) { bestDot = d; bestAxis = axis; }
+                }
+                right = Vector3.Cross(normal, bestAxis);
             }
 
             return right.normalized;

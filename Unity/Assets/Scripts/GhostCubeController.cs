@@ -26,6 +26,7 @@ namespace EscapeED
         [SerializeField] private List<Vector3> faceNormals = new List<Vector3>();
 
         private List<MeshRenderer> arrowRenderers = new List<MeshRenderer>();
+        private List<Color>        faceBaseColors = new List<Color>();
 
         private MaterialPropertyBlock propBlock;
 
@@ -53,10 +54,27 @@ namespace EscapeED
             arrowRenderers.Clear();
         }
 
+        private Color GetRendererBaseColor(MeshRenderer r)
+        {
+            if (r.sharedMaterial.HasProperty(BaseColorId))
+                return r.sharedMaterial.GetColor(BaseColorId);
+            if (r.sharedMaterial.HasProperty(ColorId))
+                return r.sharedMaterial.GetColor(ColorId);
+            return Color.white;
+        }
+
+        private void CacheFaceColors()
+        {
+            faceBaseColors.Clear();
+            foreach (var r in faceRenderers)
+                faceBaseColors.Add(r != null ? GetRendererBaseColor(r) : Color.white);
+        }
+
         public void Initialize(List<GameObject> faces, List<Vector3> normals)
         {
             faceRenderers.Clear();
             faceNormals.Clear();
+            faceBaseColors.Clear();
             propBlock = new MaterialPropertyBlock();
 
             for (int i = 0; i < faces.Count; i++)
@@ -66,6 +84,7 @@ namespace EscapeED
                 {
                     faceRenderers.Add(renderer);
                     faceNormals.Add(normals[i]);
+                    faceBaseColors.Add(GetRendererBaseColor(renderer));
                 }
             }
             
@@ -164,6 +183,9 @@ namespace EscapeED
 
             if (propBlock == null) propBlock = new MaterialPropertyBlock();
 
+            // Rebuild color cache if stale (e.g. renderers added via Inspector in editor)
+            if (faceBaseColors.Count != faceRenderers.Count) CacheFaceColors();
+
             Vector3 camPos = cam.transform.position;
 
             for (int i = 0; i < faceRenderers.Count; i++)
@@ -184,14 +206,7 @@ namespace EscapeED
 
                 faceRenderers[i].GetPropertyBlock(propBlock);
 
-                // Update whichever color property the shader uses
-                Color matColor;
-                if (faceRenderers[i].sharedMaterial.HasProperty(BaseColorId))
-                    matColor = faceRenderers[i].sharedMaterial.GetColor(BaseColorId);
-                else if (faceRenderers[i].sharedMaterial.HasProperty(ColorId))
-                    matColor = faceRenderers[i].sharedMaterial.GetColor(ColorId);
-                else
-                    matColor = Color.white;
+                Color matColor = faceBaseColors[i];
 
                 matColor.a = alpha;
                 

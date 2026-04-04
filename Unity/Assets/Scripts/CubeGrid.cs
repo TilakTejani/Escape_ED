@@ -25,12 +25,22 @@ namespace EscapeED
         public Material whiteMaterial;
         public Material dotMaterial;
 
+        [Header("Edges")]
+        [Tooltip("0 = auto (spacing * 0.12)")]
+        public float edgeThickness = 0f;
+        [Range(0f, 1f)] public float edgeAlpha = 0.25f;
+
         private Dictionary<Vector3Int, GameObject> dots         = new Dictionary<Vector3Int, GameObject>();
         private List<GameObject>                   indexedDots  = new List<GameObject>();
-        private List<Vector3Int>                   indexedCoords = new List<Vector3Int>(); 
+        private List<Vector3Int>                   indexedCoords = new List<Vector3Int>();
         private GameObject                         backgroundCube;
-        private List<GameObject>                   visualFaces = new List<GameObject>();
+        private List<GameObject>                   visualFaces  = new List<GameObject>();
+        private List<GameObject>                   edgeObjects  = new List<GameObject>();
         private GhostCubeController                ghostController;
+        private LevelManager                       _cachedLevelManager;
+
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int ColorId     = Shader.PropertyToID("_Color");
 
         void OnEnable()
         {
@@ -112,7 +122,8 @@ namespace EscapeED
 
         private void ApplyMasterScale()
         {
-            LevelManager lm = FindAnyObjectByType<LevelManager>();
+            if (_cachedLevelManager == null) _cachedLevelManager = FindAnyObjectByType<LevelManager>();
+            LevelManager lm = _cachedLevelManager;
             float arrowWidth = 0.08f;
             
             if (lm != null && lm.arrowPrefab != null)
@@ -270,9 +281,73 @@ namespace EscapeED
 
             if (ghostController == null) ghostController = GetComponent<GhostCubeController>();
             if (ghostController == null) ghostController = gameObject.AddComponent<GhostCubeController>();
-            
+
             ghostController.Initialize(visualFaces, new List<Vector3>(normals));
             Debug.Log($"[CubeGrid] Background Refreshed: {visualFaces.Count} faces initialized.");
+
+            CreateEdgeLines(cubeDim);
+        }
+
+        private void CreateEdgeLines(Vector3 cubeDim)
+        {
+            edgeObjects.Clear(); // GameObjects already destroyed by CreateBackgroundCube cleanup above
+
+            float hx = cubeDim.x * 0.5f;
+            float hy = cubeDim.y * 0.5f;
+            float hz = cubeDim.z * 0.5f;
+            float t  = edgeThickness > 0f ? edgeThickness : spacing * 0.03f;
+
+            // 12 edges as (localCenter, scale). Axis-aligned — no rotation needed.
+            // Extra `t` on the long axis so adjacent edges meet flush at corners.
+            (Vector3 center, Vector3 scale)[] edges =
+            {
+                // 4 along X
+                (new Vector3(0, -hy, -hz), new Vector3(cubeDim.x + t, t, t)),
+                (new Vector3(0, +hy, -hz), new Vector3(cubeDim.x + t, t, t)),
+                (new Vector3(0, -hy, +hz), new Vector3(cubeDim.x + t, t, t)),
+                (new Vector3(0, +hy, +hz), new Vector3(cubeDim.x + t, t, t)),
+                // 4 along Y
+                (new Vector3(-hx, 0, -hz), new Vector3(t, cubeDim.y + t, t)),
+                (new Vector3(+hx, 0, -hz), new Vector3(t, cubeDim.y + t, t)),
+                (new Vector3(-hx, 0, +hz), new Vector3(t, cubeDim.y + t, t)),
+                (new Vector3(+hx, 0, +hz), new Vector3(t, cubeDim.y + t, t)),
+                // 4 along Z
+                (new Vector3(-hx, -hy, 0), new Vector3(t, t, cubeDim.z + t)),
+                (new Vector3(+hx, -hy, 0), new Vector3(t, t, cubeDim.z + t)),
+                (new Vector3(-hx, +hy, 0), new Vector3(t, t, cubeDim.z + t)),
+                (new Vector3(+hx, +hy, 0), new Vector3(t, t, cubeDim.z + t)),
+            };
+
+            var propBlock = new MaterialPropertyBlock();
+            var edgeColor = new Color(1f, 1f, 1f, edgeAlpha);
+
+            for (int i = 0; i < edges.Length; i++)
+            {
+                GameObject obj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                obj.name = $"Edge_{i}";
+                obj.transform.SetParent(backgroundCube.transform);
+                obj.transform.localPosition = edges[i].center;
+                obj.transform.localRotation = Quaternion.identity;
+                obj.transform.localScale    = edges[i].scale;
+
+                // Edges are decorative — no collider needed
+                var col = obj.GetComponent<Collider>();
+                if (col != null)
+                {
+                    if (Application.isPlaying) Destroy(col);
+                    else                       DestroyImmediate(col);
+                }
+
+                var rend = obj.GetComponent<MeshRenderer>();
+                if (whiteMaterial != null) rend.sharedMaterial = whiteMaterial;
+
+                rend.GetPropertyBlock(propBlock);
+                propBlock.SetColor(BaseColorId, edgeColor);
+                propBlock.SetColor(ColorId, edgeColor);
+                rend.SetPropertyBlock(propBlock);
+
+                edgeObjects.Add(obj);
+            }
         }
 
         public GameObject GetDotAt(Vector3Int gridPos)

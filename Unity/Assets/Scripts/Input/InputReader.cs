@@ -13,7 +13,8 @@ namespace EscapeED.InputHandling
     {
         public event Action<TouchData> OnTouch;
 
-        private bool wasMousePressedLastFrame = false;
+        private bool    wasMousePressedLastFrame = false;
+        private Vector2 lastMousePosition;
 
         void Update()
         {
@@ -55,8 +56,9 @@ namespace EscapeED.InputHandling
             }
             else if (isPressed && wasMousePressedLastFrame)
             {
-                // Mouse Dragging
-                OnTouch?.Invoke(new TouchData { fingerId = -1, position = pos, phase = UnityEngine.InputSystem.TouchPhase.Moved, time = Time.unscaledTimeAsDouble });
+                // Only emit Moved when position actually changed to avoid per-frame spam
+                if (pos != lastMousePosition)
+                    OnTouch?.Invoke(new TouchData { fingerId = -1, position = pos, phase = UnityEngine.InputSystem.TouchPhase.Moved, time = Time.unscaledTimeAsDouble });
             }
             else if (!isPressed && wasMousePressedLastFrame)
             {
@@ -64,6 +66,7 @@ namespace EscapeED.InputHandling
             }
 
             wasMousePressedLastFrame = isPressed;
+            lastMousePosition = pos;
         }
     }
 }

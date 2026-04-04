@@ -35,8 +35,9 @@ namespace EscapeED
         private readonly List<Vector2> _uvs         = new List<Vector2>(512);
         private readonly List<Vector3> _meshNormals = new List<Vector3>(512);
         private List<Vector3>          _tipVerts    = new List<Vector3>(8);
+        private readonly List<Vector3> _localScratch = new List<Vector3>(64);
 
-        // State Snapshot
+        // State Snapshot — written only in SetPath when !isEjecting && !isAnimating. Never mutate in-place.
         private List<Vector3>       originalPositions;
         private List<List<Vector3>> originalNormals;
         private List<DotType>       originalDotTypes;
@@ -103,9 +104,9 @@ namespace EscapeED
 
         private List<Vector3> ProjectToLocal(List<Vector3> worldPositions)
         {
-            var local = new List<Vector3>(worldPositions.Count);
-            foreach (var p in worldPositions) local.Add(transform.InverseTransformPoint(p));
-            return local;
+            _localScratch.Clear();
+            foreach (var p in worldPositions) _localScratch.Add(transform.InverseTransformPoint(p));
+            return _localScratch;
         }
 
         private ArrowMeshBuilder.Context CreateBuildContext(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes, bool useWorldSpace)
@@ -139,7 +140,7 @@ namespace EscapeED
 
             _verts.Clear(); _tris.Clear(); _uvs.Clear(); _meshNormals.Clear();
 
-            Vector3 preTipDir = (positions[n - 1] - positions[n - 2]).normalized;
+            Vector3 preTipDir = (localPos[n - 1] - localPos[n - 2]).normalized;
             Vector3 lastValid = preTipDir.sqrMagnitude > ArrowConstants.EPS ? preTipDir : Vector3.forward;
 
             return new ArrowMeshBuilder.Context
