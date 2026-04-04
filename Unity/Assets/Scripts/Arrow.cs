@@ -171,7 +171,7 @@ namespace EscapeED
             isEjecting = true;
             _physics.DisableAllColliders();
             float gridStep = (originalPositions.Count >= 2) ? Vector3.Distance(originalPositions[0], originalPositions[1]) : 0.28f;
-            StartCoroutine(_animator.EjectSequence(originalPositions, originalNormals, gridStep));
+            StartCoroutine(_animator.EjectSequence(originalPositions, originalNormals, originalDotTypes, gridStep));
         }
 
         public void PlayBlockedAnimation()

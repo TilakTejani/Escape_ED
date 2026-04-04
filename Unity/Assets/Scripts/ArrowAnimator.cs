@@ -19,30 +19,38 @@ namespace EscapeED
         public System.Collections.IEnumerator EjectSequence(
             List<Vector3> originalPositions,
             List<List<Vector3>> originalNormals,
+            List<DotType> originalDotTypes,
             float gridStep)
         {
             int n = originalPositions.Count;
-            var pathBuffer = new List<Vector3>(n + 256);
-            for (int i = 0; i < n; i++)
-                pathBuffer.Add(_owner.transform.TransformPoint(originalPositions[i]));
+
+            // 1. CAPTURE & CONVERT: Freeze the current world-space state BEFORE detaching.
+            // This captures the cube's exact rotation into the arrow's world-space data.
+            var worldPositions = new List<Vector3>(n);
+            var worldNormals   = new List<List<Vector3>>(n);
+            foreach (var p in originalPositions)
+                worldPositions.Add(_owner.transform.TransformPoint(p));
+
+            foreach (var list in originalNormals)
+            {
+                var worldInner = new List<Vector3>(list.Count);
+                foreach (var norm in list)
+                    worldInner.Add(_owner.transform.TransformDirection(norm));
+                worldNormals.Add(worldInner);
+            }
+
+            // 2. DETACH: Now safe to break the transform chain.
+            _owner.transform.SetParent(null, false);
+            _owner.gameObject.layer = LayerMask.NameToLayer(ArrowConstants.LAYER_EJECTING_ARROW);
+
+            // 3. INITIALIZE BUFFER: Use the frozen world positions.
+            var pathBuffer = new List<Vector3>(n * 2);
+            foreach (var wp in worldPositions) pathBuffer.Add(wp);
 
             Vector3 headDir = (pathBuffer[n - 1] - pathBuffer[n - 2]).normalized;
             float speed = gridStep / 0.10f;
 
-            // Detach and set layer
-            _owner.transform.SetParent(null, false);
-            _owner.gameObject.layer = LayerMask.NameToLayer(ArrowConstants.LAYER_EJECTING_ARROW);
-
-            // Exit visuals
-            Vector3 exitNormal = (originalNormals[n - 1].Count > 0) ? originalNormals[n - 1][0] : Vector3.up;
-            var animNormals = new List<List<Vector3>>(n);
-            var animTypes   = new List<DotType>(n);
-            for (int i = 0; i < n; i++)
-            {
-                animNormals.Add(new List<Vector3> { exitNormal });
-                animTypes.Add(DotType.Face);
-            }
-
+            // 4. ANIMATION DATA: Use original dot types to maintain visual fidelity (folds/bends).
             var sampledPos = new List<Vector3>(n);
             float totalDist = (n + 10) * gridStep;
             float traveled = 0f;
@@ -52,8 +60,12 @@ namespace EscapeED
                 float step = speed * Time.deltaTime;
                 traveled += step;
                 pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
+                
                 SamplePathBufferAll(pathBuffer, n, gridStep, sampledPos);
-                _owner.SetPath(sampledPos, animNormals, animTypes);
+                
+                // Use the captured worldNormals and originalDotTypes.
+                // Note: As the arrow slides, the 'folds' naturally travel with the body.
+                _owner.SetPath(sampledPos, worldNormals, originalDotTypes);
                 yield return null;
             }
 
@@ -70,6 +82,7 @@ namespace EscapeED
 
             Object.Destroy(_owner.gameObject);
         }
+
 
         public System.Collections.IEnumerator BlockedShakeSequence(
             List<Vector3> originalPositions,
