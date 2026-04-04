@@ -137,7 +137,7 @@ namespace EscapeED
             if (index >= 0 && index < indexedCoords.Count)
             {
                 Vector3Int p = indexedCoords[index];
-                return CalculateWorldPos(p.x, p.y, p.z);
+                return transform.TransformPoint(CalculateWorldPos(p.x, p.y, p.z));
             }
             return Vector3.zero;
         }
