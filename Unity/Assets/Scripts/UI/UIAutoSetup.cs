@@ -57,6 +57,9 @@ namespace EscapeED.EditorHelper
             // 2. Kill the White Screen: Force Camera Layers
             FixCameras();
 
+            // 3. SET UP GAME CORE (The Fix!)
+            SetupGameCore();
+
             // Re-create GameStateManager if missing or broken
             GameStateManager existingGSM = Object.FindAnyObjectByType<GameStateManager>();
             if (existingGSM == null)
@@ -100,24 +103,21 @@ namespace EscapeED.EditorHelper
             SplashScreenView splashView = CreateSplashPanel(canvasObj.transform);
             splashView.targetState = GameState.Init;
 
-            // 5. Create Home Panel
-            GameObject homeObj = CreatePanel(canvasObj.transform, "HomePanel", new Color(0.05f, 0.05f, 0.05f, 1f));
+            // 5. Create Home Panel (FULL REDESIGN)
+            GameObject homeObj = CreatePanel(canvasObj.transform, "HomePanel", new Color(0.94f, 0.95f, 1f, 1f)); // #F0F2FF
             CanvasGroup homeCG = homeObj.AddComponent<CanvasGroup>();
             homeCG.alpha = 0f; 
             
             HomeScreenView homeView = homeObj.AddComponent<HomeScreenView>();
             homeView.targetState = GameState.MainMenu;
 
-            CreateText(homeObj.transform, "MAIN MENU", 60, Color.white, new Vector2(0, 400));
+            // Build the Redesigned Menu Layout
+            CreateHomeLayout(homeObj.transform, homeView);
+            
+            // 6. FINAL SYNC: Attach listeners now that buttons exist (Critical for device)
+            homeView.InitializeSync();
 
-            GameObject btnObj = CreateButton(homeObj.transform, "PlayButton", "PLAY GAME", new Vector2(0, 0));
-            homeView.playButton = btnObj.GetComponent<Button>();
-            homeView.playButton.onClick.AddListener(() => {
-                Debug.Log("[UIAutoSetup] Play Button Clicked! Transitioning to PLAYING state.");
-                GameStateManager.Instance.UpdateState(GameState.Playing);
-            });
-
-            // 6. Link panels to UIManager & FINAL HANDSHAKE
+            // Link panels to UIManager & FINAL HANDSHAKE
             BaseUIPanel[] allPanels = new BaseUIPanel[] { splashView, homeView };
             uiManager.Initialize(allPanels);
 
@@ -225,6 +225,161 @@ namespace EscapeED.EditorHelper
             splashView.loadingFill = fillRect;
 
             return splashView;
+        }
+
+        private void SetupGameCore()
+        {
+            Debug.Log("[UIAutoSetup] 🧩 Building Game Core Logic...");
+            
+            // 1. Scene Cleanup: Remove legacy or duplicate objects that cause interference
+            string[] legacyObjects = { "GameManager", "LevelManager", "CubeManager" };
+            foreach (var name in legacyObjects)
+            {
+                var legacy = GameObject.Find(name);
+                if (legacy != null) Object.DestroyImmediate(legacy);
+            }
+
+            GameObject core = GameObject.Find("GameCore");
+            if (core == null) core = new GameObject("GameCore");
+
+            // 2. Attach core components IN ORDER (Dependencies first)
+            CubeGrid grid = core.GetComponent<CubeGrid>() ?? core.AddComponent<CubeGrid>();
+            CubeNavigator nav = core.GetComponent<CubeNavigator>() ?? core.AddComponent<CubeNavigator>();
+            CubeRotator rot = core.GetComponent<CubeRotator>() ?? core.AddComponent<CubeRotator>();
+            GhostCubeController ghost = core.GetComponent<GhostCubeController>() ?? core.AddComponent<GhostCubeController>();
+            
+            // LevelManager depends on Grid and Navigator
+            LevelManager lm = core.GetComponent<LevelManager>() ?? core.AddComponent<LevelManager>();
+
+            // Configure Grid
+            grid.size = new Vector3Int(3, 3, 3);
+            grid.spacing = 1.0f;
+            
+            // 3. Link Components MANUALLY (Critical for device timing)
+            lm.grid = grid;
+            lm.navigator = nav;
+            lm.ghostController = ghost;
+            lm.forceWhiteBackground = true;
+            
+            // 4. AUTOMATED ASSET LINKING
+            lm.levelJsonFile = Resources.Load<TextAsset>("Levels/5x5x5");
+            lm.arrowPrefab = Resources.Load<GameObject>("Prefabs/Arrow");
+            lm.arrowMaterial = Resources.Load<Material>("Materials/ArrowPulseMat");
+
+#if UNITY_EDITOR
+            // Editor fallback for Material if not in Resources
+            if (lm.arrowMaterial == null)
+            {
+                lm.arrowMaterial = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Materials/ArrowPulseMat.mat");
+            }
+#endif
+
+            if (lm.levelJsonFile != null)
+                Debug.Log($"<color=green>[UIAutoSetup] SUCCESS: Level JSON Loaded: {lm.levelJsonFile.name}</color>");
+            else
+                Debug.LogWarning("[UIAutoSetup] FAILED: Default Level JSON (5x5x5) not found in Resources/Levels/");
+
+            if (lm.arrowPrefab == null) Debug.LogWarning("[UIAutoSetup] FAILED: Arrow Prefab not found in Resources/Prefabs/");
+            
+            Debug.Log("[UIAutoSetup] ✅ Game Core is synchronized and correctly linked.");
+        }
+
+        private void CreateHomeLayout(Transform parent, HomeScreenView view)
+        {
+            // 1. TOP LEFT BUTTONS
+            GameObject settingsObj = CreateIconButton(parent, "SettingsBtn", "UI/settings_icon", new Vector2(-420, 750));
+            view.settingsButton = settingsObj.GetComponent<Button>();
+
+            GameObject adsObj = CreateIconButton(parent, "AdsBtn", "UI/ads_icon", new Vector2(-420, 500));
+            view.adsButton = adsObj.GetComponent<Button>();
+
+            // 2. CENTER CONTENT
+            CreateText(parent, "Arrows\nCube Escape", 85, new Color(0.2f, 0.2f, 0.2f, 1f), new Vector2(0, 150)).GetComponent<Text>().fontStyle = FontStyle.Bold;
+            
+            GameObject levelObj = CreateText(parent, "Level 12", 45, new Color(0f, 0.3f, 1f, 1f), new Vector2(0, -20));
+            view.levelText = levelObj.GetComponent<Text>();
+            view.levelText.fontStyle = FontStyle.Bold;
+
+            GameObject playBtnObj = CreateButton(parent, "PlayButton", "Play", new Vector2(0, -400));
+            view.playButton = playBtnObj.GetComponent<Button>();
+            // Update Play button visuals to match SS (Light Blue Pill)
+            playBtnObj.GetComponent<RectTransform>().sizeDelta = new Vector2(400, 120);
+            var playImg = playBtnObj.GetComponent<Image>();
+            playImg.sprite = GetRoundedRectSprite(); 
+            playImg.color = new Color(0.31f, 0.76f, 0.97f, 1f); // Sky Blue #4FC3F7
+            
+            Text playTxt = playBtnObj.GetComponentInChildren<Text>();
+            playTxt.fontSize = 55;
+            playTxt.fontStyle = FontStyle.Bold;
+
+            // 3. BOTTOM NAVIGATION BAR
+            GameObject navBar = CreatePanel(parent, "BottomNav", Color.white);
+            RectTransform navRect = navBar.GetComponent<RectTransform>();
+            navRect.anchorMin = new Vector2(0, 0);
+            navRect.anchorMax = new Vector2(1, 0.2f); // Bottom 20%
+            navRect.offsetMin = Vector2.zero;
+            navRect.offsetMax = Vector2.zero;
+
+            // Nav Highlight for Home
+            GameObject highlight = new GameObject("HomeHighlight", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            highlight.transform.SetParent(navBar.transform, false);
+            var highRect = highlight.GetComponent<RectTransform>();
+            highRect.sizeDelta = new Vector2(180, 100);
+            highRect.anchoredPosition = new Vector2(0, 40);
+            
+            var highImg = highlight.GetComponent<Image>();
+            highImg.sprite = GetRoundedRectSprite();
+            highImg.color = new Color(0.91f, 0.92f, 0.96f, 1f); // #E8EAF6
+
+            // Nav Icons
+            view.shopButton = CreateIconButton(navBar.transform, "ShopNav", "UI/shop_icon", new Vector2(-300, 40)).GetComponent<Button>();
+            view.homeButton = CreateIconButton(navBar.transform, "HomeNav", "UI/home_icon", new Vector2(0, 40)).GetComponent<Button>();
+            view.collectionButton = CreateIconButton(navBar.transform, "CollectionNav", "UI/shop_icon", new Vector2(300, 40)).GetComponent<Button>(); // Using shop icon as lock placeholder
+
+            CreateText(navBar.transform, "Home", 30, new Color(0.3f, 0.3f, 0.6f, 1f), new Vector2(0, -40)).GetComponent<Text>().fontStyle = FontStyle.Bold;
+        }
+
+        private GameObject CreateIconButton(Transform parent, string name, string resourcePath, Vector2 pos)
+        {
+            GameObject obj = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            obj.layer = 5; // UI Layer
+            obj.transform.SetParent(parent, false);
+            var rect = obj.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(120, 120);
+            rect.anchoredPosition = pos;
+
+            var img = obj.GetComponent<Image>();
+            
+            // Try Loading via Resources (Works on Device)
+            Texture2D tex = Resources.Load<Texture2D>(resourcePath);
+            
+            // FALLBACK TO ASSETDATABASE (Editor Only)
+#if UNITY_EDITOR
+            if (tex == null)
+            {
+                string directPath = "Assets/Resources/" + resourcePath + ".png";
+                tex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(directPath);
+            }
+            
+            if (tex == null) // Second fallback: old location
+            {
+                string directPath = "Assets/Textures/" + resourcePath + ".png";
+                tex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(directPath);
+            }
+#endif
+
+            if (tex != null)
+            {
+                img.sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
+                img.color = Color.white;
+            }
+            else
+            {
+                img.color = new Color(0.5f, 0.5f, 0.5f, 0.5f); // Grey placeholder
+                Debug.LogWarning($"[UIAutoSetup] Failed to load icon at: {resourcePath}");
+            }
+
+            return obj;
         }
 
         private GameObject CreateText(Transform parent, string content, int fontSize, Color color, Vector2 anchoredPos)
