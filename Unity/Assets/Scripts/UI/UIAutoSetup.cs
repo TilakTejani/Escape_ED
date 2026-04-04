@@ -11,27 +11,58 @@ namespace EscapeED.EditorHelper
         [Header("Setup Configuration")]
         public Vector2 referenceResolution = new Vector2(1080, 1920);
 
+#if UNITY_EDITOR
+        [UnityEditor.MenuItem("EscapeED/Full UI Setup")]
+        public static void ForceSetupFromMenu()
+        {
+            var setup = Object.FindAnyObjectByType<UIAutoSetup>();
+            if (setup == null)
+            {
+                GameObject g = new GameObject("_UI_Setup_System", typeof(UIAutoSetup));
+                setup = g.GetComponent<UIAutoSetup>();
+            }
+            setup.SetupUI();
+            
+            // Set Bundle Identifier for iOS
+            UnityEditor.PlayerSettings.SetApplicationIdentifier(UnityEditor.BuildTargetGroup.iOS, "com.axiallabs.escape-3d");
+            Debug.Log("<color=cyan>[UIAutoSetup] Bundle ID updated to: com.axiallabs.escape-3d</color>");
+
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
+            Debug.Log("<color=green>[UIAutoSetup] PREMIUM UI REBUILD COMPLETE!</color>");
+        }
+#endif
+
         [ContextMenu("Setup EscapeED UI")]
         public void SetupUI()
         {
-            Debug.Log("[UIAutoSetup] Starting Deep System Clean & Optimization...");
-
-            // 1. Kill the White Screen: Force Camera Layers
-            FixCameras();
-
-            // 2. Kill Legacy Input
-            var legacyModules = Object.FindObjectsByType<StandaloneInputModule>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            foreach (var module in legacyModules) 
+            Debug.Log("[UIAutoSetup] 🚨 BEGINNING NUCLEAR PREMIUM UI REBUILD...");
+            
+            // 1. NUCLEAR WIPE: Destroy ALL existing Canvas and EventSystem objects
+            var allCanvases = Object.FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var c in allCanvases) 
             {
-                if (Application.isPlaying) Destroy(module.gameObject);
-                else DestroyImmediate(module.gameObject);
+                if (Application.isPlaying) Destroy(c.gameObject);
+                else DestroyImmediate(c.gameObject);
             }
+
+            var allEventSystems = Object.FindObjectsByType<EventSystem>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var evSystem in allEventSystems)
+            {
+                if (Application.isPlaying) Destroy(evSystem.gameObject);
+                else DestroyImmediate(evSystem.gameObject);
+            }
+
+            Debug.Log("[UIAutoSetup] 🧹 Scene Cleaned. Starting Deep System Optimization...");
+
+            // 2. Kill the White Screen: Force Camera Layers
+            FixCameras();
 
             // Re-create GameStateManager if missing or broken
             GameStateManager existingGSM = Object.FindAnyObjectByType<GameStateManager>();
             if (existingGSM == null)
             {
-                GameObject gsmObj = new GameObject("GameStateManager", typeof(GameStateManager));
+                GameObject gsmObj = new GameObject("GameStateManager");
+                gsmObj.AddComponent<GameStateManager>();
                 Debug.Log("[UIAutoSetup] Created fresh GameStateManager.");
             }
 
@@ -65,18 +96,9 @@ namespace EscapeED.EditorHelper
             canvasObj.AddComponent<GraphicRaycaster>();
             UIManager uiManager = canvasObj.AddComponent<UIManager>();
             
-            // MOBILE DEBUG: Add on-screen diagnostics for iOS troubleshooting
-            canvasObj.AddComponent<MobileDebugOverlay>();
-
             // 4. Create Splash Panel
-            GameObject splashObj = CreatePanel(canvasObj.transform, "SplashPanel", Color.black);
-            CanvasGroup splashCG = splashObj.AddComponent<CanvasGroup>();
-            splashCG.alpha = 1f;
-            
-            SplashScreenView splashView = splashObj.AddComponent<SplashScreenView>();
+            SplashScreenView splashView = CreateSplashPanel(canvasObj.transform);
             splashView.targetState = GameState.Init;
-
-            CreateText(splashObj.transform, "ESCAPE-ED", 80, Color.white, new Vector2(0, 100));
 
             // 5. Create Home Panel
             GameObject homeObj = CreatePanel(canvasObj.transform, "HomePanel", new Color(0.05f, 0.05f, 0.05f, 1f));
@@ -115,6 +137,71 @@ namespace EscapeED.EditorHelper
 
             obj.GetComponent<Image>().color = color;
             return obj;
+        }
+
+        private SplashScreenView CreateSplashPanel(Transform parent)
+        {
+            GameObject splashObj = new GameObject("SplashPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            splashObj.transform.SetParent(parent, false);
+            var rect = splashObj.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            SplashScreenView splashView = splashObj.AddComponent<SplashScreenView>();
+
+            // 1. Clean Light Grey Background (Premium Feel)
+            var bgImage = splashObj.GetComponent<Image>();
+            bgImage.color = new Color(0.94f, 0.94f, 0.94f, 1f); 
+
+            // 2. Logo (Centered - Using RawImage for Device Compatibility)
+            GameObject logoObj = new GameObject("LogoImage", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
+            logoObj.transform.SetParent(splashObj.transform, false);
+            var logoRect = logoObj.GetComponent<RectTransform>();
+            logoRect.sizeDelta = new Vector2(650, 650); // Larger logo
+            logoRect.anchoredPosition = Vector2.zero; // Center it
+            
+            var logoImg = logoObj.GetComponent<RawImage>();
+            logoImg.color = Color.white; 
+            
+            // AUTO-LOGO ASSIGNMENT (Universal: Editor & Runtime)
+            string logoResourcePath = "Logo/escape_ed_logo_accurate";
+            
+            // Load as Texture2D (Works on Device via Resources)
+            var logoTex = Resources.Load<Texture2D>(logoResourcePath);
+            
+            // FALLBACK (Editor Only): In case it's not in Resources yet during development
+#if UNITY_EDITOR
+            if (logoTex == null)
+            {
+                string directPath = "Assets/Textures/Logo/escape_ed_logo_accurate.png";
+                string projectRoot = System.IO.Path.GetDirectoryName(Application.dataPath);
+                string fullPath = System.IO.Path.Combine(projectRoot, directPath);
+                
+                if (System.IO.File.Exists(fullPath))
+                    logoTex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(directPath);
+            }
+#endif
+
+            if (logoTex != null)
+            {
+                logoImg.texture = logoTex;
+                
+                // Maintain aspect ratio manually for RawImage
+                float aspect = (float)logoTex.width / logoTex.height;
+                if (aspect > 1) logoRect.sizeDelta = new Vector2(650, 650 / aspect);
+                else logoRect.sizeDelta = new Vector2(650 * aspect, 650);
+
+                logoImg.color = Color.white; 
+                Debug.Log($"<color=green>[UIAutoSetup] Successfully assigned Logo Texture ({logoTex.name}) to RawImage.</color>");
+            }
+            else
+            {
+                Debug.LogWarning($"[UIAutoSetup] Logo '{logoResourcePath}' missing from Resources! Please ensure it exists at Assets/Resources/{logoResourcePath}.png");
+            }
+
+            return splashView;
         }
 
         private GameObject CreateText(Transform parent, string content, int fontSize, Color color, Vector2 anchoredPos)
