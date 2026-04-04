@@ -155,30 +155,26 @@ namespace EscapeED.EditorHelper
             var bgImage = splashObj.GetComponent<Image>();
             bgImage.color = new Color(0.94f, 0.94f, 0.94f, 1f); 
 
-            // 2. Logo (Centered - Using RawImage for Device Compatibility)
+            // 2. Logo (Centered - Upper Middle)
             GameObject logoObj = new GameObject("LogoImage", typeof(RectTransform), typeof(CanvasRenderer), typeof(RawImage));
             logoObj.transform.SetParent(splashObj.transform, false);
             var logoRect = logoObj.GetComponent<RectTransform>();
-            logoRect.sizeDelta = new Vector2(650, 650); // Larger logo
-            logoRect.anchoredPosition = Vector2.zero; // Center it
+            logoRect.sizeDelta = new Vector2(650, 650); 
+            logoRect.anchoredPosition = new Vector2(0, 200); // Moved up to make room for bar
             
             var logoImg = logoObj.GetComponent<RawImage>();
             logoImg.color = Color.white; 
             
             // AUTO-LOGO ASSIGNMENT (Universal: Editor & Runtime)
             string logoResourcePath = "Logo/escape_ed_logo_accurate";
-            
-            // Load as Texture2D (Works on Device via Resources)
             var logoTex = Resources.Load<Texture2D>(logoResourcePath);
             
-            // FALLBACK (Editor Only): In case it's not in Resources yet during development
 #if UNITY_EDITOR
             if (logoTex == null)
             {
                 string directPath = "Assets/Textures/Logo/escape_ed_logo_accurate.png";
                 string projectRoot = System.IO.Path.GetDirectoryName(Application.dataPath);
                 string fullPath = System.IO.Path.Combine(projectRoot, directPath);
-                
                 if (System.IO.File.Exists(fullPath))
                     logoTex = UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>(directPath);
             }
@@ -187,19 +183,46 @@ namespace EscapeED.EditorHelper
             if (logoTex != null)
             {
                 logoImg.texture = logoTex;
-                
-                // Maintain aspect ratio manually for RawImage
                 float aspect = (float)logoTex.width / logoTex.height;
                 if (aspect > 1) logoRect.sizeDelta = new Vector2(650, 650 / aspect);
                 else logoRect.sizeDelta = new Vector2(650 * aspect, 650);
+            }
 
-                logoImg.color = Color.white; 
-                Debug.Log($"<color=green>[UIAutoSetup] Successfully assigned Logo Texture ({logoTex.name}) to RawImage.</color>");
-            }
-            else
-            {
-                Debug.LogWarning($"[UIAutoSetup] Logo '{logoResourcePath}' missing from Resources! Please ensure it exists at Assets/Resources/{logoResourcePath}.png");
-            }
+            // 3. Loading UI (Bottom)
+            // Text: "LOADING"
+            GameObject loadingTxtObj = CreateText(splashObj.transform, "LOADING", 35, new Color(0.36f, 0.61f, 1f), new Vector2(0, -600));
+            loadingTxtObj.GetComponent<Text>().fontStyle = FontStyle.Bold;
+
+            // Bar Track (Perfect Circular Borders)
+            Sprite roundedSprite = GetRoundedRectSprite();
+            
+            GameObject barTrack = new GameObject("ProgressTrack", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            barTrack.transform.SetParent(splashObj.transform, false);
+            var trackRect = barTrack.GetComponent<RectTransform>();
+            trackRect.sizeDelta = new Vector2(600, 45); // Thick bar
+            trackRect.anchoredPosition = new Vector2(0, -680);
+            
+            var trackImg = barTrack.GetComponent<Image>();
+            trackImg.sprite = roundedSprite;
+            trackImg.type = Image.Type.Sliced;
+            trackImg.color = new Color(0.5f, 0.5f, 0.5f, 1f); // Grey track
+
+            // Bar Fill (Perfect Circular borders)
+            GameObject barFillObj = new GameObject("ProgressFill", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            barFillObj.transform.SetParent(barTrack.transform, false);
+            var fillRect = barFillObj.GetComponent<RectTransform>();
+            fillRect.anchorMin = new Vector2(0, 0.05f); // Tiny offset to keep it inside track
+            fillRect.anchorMax = new Vector2(0, 0.95f); 
+            fillRect.pivot = new Vector2(0, 0.5f);
+            fillRect.sizeDelta = Vector2.zero; 
+
+            var fillImg = barFillObj.GetComponent<Image>();
+            fillImg.sprite = roundedSprite;
+            fillImg.type = Image.Type.Sliced;
+            fillImg.color = new Color(0f, 1f, 0f, 1f); // Bright Green
+
+            // Link to SplashView for animation
+            splashView.loadingFill = fillRect;
 
             return splashView;
         }
@@ -253,11 +276,37 @@ namespace EscapeED.EditorHelper
             }
         }
 
-        private static void ForceLayerRecursive(Transform trans, int layer)
+        private void ForceLayerRecursive(Transform trans, int layer)
         {
             trans.gameObject.layer = layer;
             foreach (Transform child in trans)
                 ForceLayerRecursive(child, layer);
+        }
+
+        private Sprite GetRoundedRectSprite()
+        {
+            int size = 128;
+            float radius = 25.0f; // Subtle roundness (Adjust to user preference)
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // Distance to the edge of a rounded rect logic
+                    float dx = Mathf.Max(radius - x, 0, x - (size - 1 - radius));
+                    float dy = Mathf.Max(radius - y, 0, y - (size - 1 - radius));
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    if (dist < radius - 1f) pixels[y * size + x] = Color.white;
+                    else if (dist < radius) pixels[y * size + x] = new Color(1, 1, 1, Mathf.Clamp01(radius - dist));
+                    else pixels[y * size + x] = Color.clear;
+                }
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            // Sliced with 30px borders ensures corners don't stretch
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(30, 30, 30, 30));
         }
     }
 }
