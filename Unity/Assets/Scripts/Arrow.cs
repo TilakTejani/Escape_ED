@@ -51,7 +51,7 @@ namespace EscapeED
         ///   - 2 normals → edge vertex            → fold when both ends share the same edge
         /// </summary>
         public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes)
-        {
+         {
             if (positions.Count < 2) return;
 
             // Only cache original data if we aren't currently animating/ejecting

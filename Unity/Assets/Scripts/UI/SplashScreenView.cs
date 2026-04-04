@@ -6,7 +6,7 @@ namespace EscapeED.UI
     public class SplashScreenView : BaseUIPanel
     {
         [Header("Splash Settings")]
-        public float splashDuration = 2.5f;
+        public float splashDuration = 2f;
 
         [Header("References")]
         public RectTransform loadingFill;
@@ -29,8 +29,19 @@ namespace EscapeED.UI
             while (elapsed < splashDuration)
             {
                 elapsed += Time.deltaTime;
+                
+                // Update Progress Bar
+                if (loadingFill != null)
+                {
+                    float progress = elapsed / splashDuration;
+                    loadingFill.anchorMax = new Vector2(progress, 1f);
+                }
+
                 yield return null;
             }
+
+            // Final Snap to 100%
+            if (loadingFill != null) loadingFill.anchorMax = new Vector2(1f, 1f);
 
             yield return new WaitForSeconds(0.2f); // Short buffer
 
