@@ -23,7 +23,13 @@ namespace EscapeED
 
         private MeshFilter   mf;
         private MeshRenderer mr;
-        private List<GameObject> activeSegmentObjects = new List<GameObject>();
+        private List<BoxCollider> segmentColliders = new List<BoxCollider>();
+
+        // Reusable mesh buffers — cleared each SetPath call, never reallocated
+        private readonly List<Vector3> _verts       = new List<Vector3>(512);
+        private readonly List<int>     _tris        = new List<int>(1024);
+        private readonly List<Vector2> _uvs         = new List<Vector2>(512);
+        private readonly List<Vector3> _meshNormals = new List<Vector3>(512);
 
         private List<Vector3>      originalPositions;
         private List<List<Vector3>> originalNormals;
@@ -97,10 +103,11 @@ namespace EscapeED
                 dist[i] = dist[i - 1] + Vector3.Distance(localPos[i - 1], localPos[i]);
             float totalDist = dist[n - 1] + tipLength;
 
-            var verts       = new List<Vector3>();
-            var tris        = new List<int>();
-            var uvs         = new List<Vector2>();
-            var meshNormals = new List<Vector3>();
+            _verts.Clear(); _tris.Clear(); _uvs.Clear(); _meshNormals.Clear();
+            var verts       = _verts;
+            var tris        = _tris;
+            var uvs         = _uvs;
+            var meshNormals = _meshNormals;
 
             // ── Body ─────────────────────────────────────────────────────────────
             // Pre-compute tip direction so the last segment can be trimmed if needed.
@@ -326,17 +333,18 @@ namespace EscapeED
         public void Eject()
         {
             if (isEjecting) return;
-            foreach(var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
+            foreach (var col in segmentColliders) if (col != null) col.gameObject.SetActive(false);
             StartCoroutine(EjectCoroutine());
         }
 
         private void UpdateSegmentColliders(List<Vector3> localPos, List<List<Vector3>> allNormals, List<DotType> dotTypes)
         {
-            foreach (var seg in activeSegmentObjects) if(seg != null) seg.SetActive(false);
+            if (isEjecting) return;
 
             int segIndex = 0;
             int n = localPos.Count;
             Vector3 lastValidDir = n >= 2 ? (localPos[1] - localPos[0]).normalized : Vector3.forward;
+
             for (int i = 0; i < n - 1; i++)
             {
                 Vector3 start  = localPos[i];
@@ -356,60 +364,47 @@ namespace EscapeED
                 else
                     dir = lastValidDir;
 
-                // Try to get a valid face normal for the 'up' direction of the box
                 Vector3 faceN = PrimaryNormal(allNormals[i]);
                 if (dotTypes[i] != DotType.Face && dotTypes[i + 1] == DotType.Face)
                     faceN = PrimaryNormal(allNormals[i + 1]);
 
                 Quaternion rot = Quaternion.LookRotation(dir, faceN);
 
-                GameObject segmentObj = null;
-                BoxCollider col = null;
-
-                if (segIndex < activeSegmentObjects.Count)
+                BoxCollider col;
+                if (segIndex < segmentColliders.Count)
                 {
-                    segmentObj = activeSegmentObjects[segIndex];
-                    if (segmentObj != null)
-                    {
-                        segmentObj.SetActive(true);
-                        col = segmentObj.GetComponent<BoxCollider>();
-                    }
+                    col = segmentColliders[segIndex];
+                    col.gameObject.SetActive(true);
                 }
-                
-                if (segmentObj == null)
+                else
                 {
-                    segmentObj = new GameObject($"SegmentCollider_{segIndex}");
-                    segmentObj.transform.SetParent(this.transform, false);
-                    segmentObj.layer = this.gameObject.layer;
-                    col = segmentObj.AddComponent<BoxCollider>();
-                    if (segIndex < activeSegmentObjects.Count)
-                        activeSegmentObjects[segIndex] = segmentObj;
-                    else
-                        activeSegmentObjects.Add(segmentObj);
+                    var obj = new GameObject($"Seg_{segIndex}");
+                    obj.transform.SetParent(this.transform, false);
+                    obj.layer = this.gameObject.layer;
+                    col = obj.AddComponent<BoxCollider>();
+                    segmentColliders.Add(col);
                 }
 
-                segmentObj.transform.localPosition = center;
-                segmentObj.transform.localRotation = rot;
-
-                // Center is local to the segment object, lift it up by the surface offset
+                col.transform.localPosition = center;
+                col.transform.localRotation = rot;
                 col.center = new Vector3(0, surfaceOffset, 0);
-                col.size = new Vector3(lineWidth, lineWidth, length);
-
+                col.size   = new Vector3(lineWidth, lineWidth, length);
                 segIndex++;
             }
+
+            // Disable unused pooled colliders
+            for (int i = segIndex; i < segmentColliders.Count; i++)
+                if (segmentColliders[i] != null) segmentColliders[i].gameObject.SetActive(false);
         }
 
         private void OnDrawGizmosSelected()
         {
-            if (activeSegmentObjects == null) return;
+            if (segmentColliders == null) return;
             Gizmos.color = new Color(0f, 1f, 0f, 0.3f);
-            foreach (var seg in activeSegmentObjects)
+            foreach (var col in segmentColliders)
             {
-                if (seg == null || !seg.activeSelf) continue;
-                BoxCollider col = seg.GetComponent<BoxCollider>();
-                if (col == null) continue;
-                
-                Gizmos.matrix = seg.transform.localToWorldMatrix;
+                if (col == null || !col.gameObject.activeSelf) continue;
+                Gizmos.matrix = col.transform.localToWorldMatrix;
                 Gizmos.DrawCube(col.center, col.size);
                 Gizmos.color = Color.green;
                 Gizmos.DrawWireCube(col.center, col.size);
@@ -464,14 +459,7 @@ namespace EscapeED
                 // Extend buffer with new head position
                 pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
 
-                // Sample each dot at its fixed distance offset behind the head
-                sampledPos.Clear();
-                for (int i = 0; i < n; i++)
-                {
-                    float offset = (float)(n - 1 - i) * gridStep;
-                    sampledPos.Add(SamplePathBuffer(pathBuffer, offset));
-                }
-
+                SamplePathBufferAll(pathBuffer, n, gridStep, sampledPos);
                 SetPath(sampledPos, animNormals, animTypes);
                 yield return null;
             }
@@ -500,22 +488,43 @@ namespace EscapeED
             return copy;
         }
 
-        private static Vector3 SamplePathBuffer(List<Vector3> buffer, float targetDist)
+        // Single-pass path buffer sampling — O(buffer + n) instead of O(buffer * n).
+        // Walks the buffer once from the end, emitting positions for all n dots in order.
+        // results[0] = tail (offset (n-1)*gridStep), results[n-1] = head (offset 0).
+        private static void SamplePathBufferAll(List<Vector3> buffer, int dotCount, float gridStep, List<Vector3> results)
         {
-            if (targetDist <= 0f) return buffer[buffer.Count - 1];
+            results.Clear();
+            for (int i = 0; i < dotCount; i++) results.Add(Vector3.zero);
 
+            // Head (offset 0) is always the last buffer entry
+            results[dotCount - 1] = buffer[buffer.Count - 1];
+
+            int   nextDot     = 1;   // next dot index to emit (1 = one step behind head)
             float accumulated = 0f;
-            for (int i = buffer.Count - 1; i > 0; i--)
+
+            for (int i = buffer.Count - 1; i > 0 && nextDot < dotCount; i--)
             {
                 float segLen = Vector3.Distance(buffer[i], buffer[i - 1]);
-                if (accumulated + segLen >= targetDist)
+
+                while (nextDot < dotCount)
                 {
+                    float targetDist = nextDot * gridStep;
+                    if (accumulated + segLen < targetDist) break;
+
                     float t = (targetDist - accumulated) / segLen;
-                    return Vector3.Lerp(buffer[i], buffer[i - 1], t);
+                    results[dotCount - 1 - nextDot] = Vector3.Lerp(buffer[i], buffer[i - 1], t);
+                    nextDot++;
                 }
+
                 accumulated += segLen;
             }
-            return buffer[0];
+
+            // Clamp any remaining dots to the buffer start
+            while (nextDot < dotCount)
+            {
+                results[dotCount - 1 - nextDot] = buffer[0];
+                nextDot++;
+            }
         }
 
         // ── Interaction Helpers ───────────────────────────────────────────────────
@@ -589,12 +598,7 @@ namespace EscapeED
 
                 pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
 
-                sampledPos.Clear();
-                for (int i = 0; i < n; i++)
-                {
-                    float offset = (float)(n - 1 - i) * gridStep;
-                    sampledPos.Add(SamplePathBuffer(pathBuffer, offset));
-                }
+                SamplePathBufferAll(pathBuffer, n, gridStep, sampledPos);
                 SetPath(sampledPos, originalNormals, originalDotTypes);
                 yield return null;
             }
@@ -609,12 +613,7 @@ namespace EscapeED
 
                 pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] - headDir * step);
 
-                sampledPos.Clear();
-                for (int i = 0; i < n; i++)
-                {
-                    float offset = (float)(n - 1 - i) * gridStep;
-                    sampledPos.Add(SamplePathBuffer(pathBuffer, offset));
-                }
+                SamplePathBufferAll(pathBuffer, n, gridStep, sampledPos);
                 SetPath(sampledPos, originalNormals, originalDotTypes);
                 yield return null;
             }
