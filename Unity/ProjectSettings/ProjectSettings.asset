@@ -167,7 +167,7 @@ PlayerSettings:
   applicationIdentifier:
     Android: com.axiallabs.escape3d
     Standalone: com.axiallabs.escape3d
-    iPhone: com.axiallabs.escape3d
+    iPhone: com.axiallabs.escape-3d
   buildNumber:
     Standalone: 0
     VisionOS: 0
