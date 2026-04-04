@@ -28,7 +28,8 @@ namespace EscapeED
         private List<Vector3>      originalPositions;
         private List<List<Vector3>> originalNormals;
         private List<DotType>      originalDotTypes;
-        private bool               isEjecting = false;
+        private bool               isEjecting  = false;
+        private bool               isAnimating = false;
         public  bool               IsEjecting => isEjecting;
         private Coroutine          activeShake;
 
@@ -55,10 +56,10 @@ namespace EscapeED
             if (positions.Count < 2) return;
 
             // Only cache original data if we aren't currently animating/ejecting
-            if (!isEjecting)
+            if (!isEjecting && !isAnimating)
             {
                 originalPositions = new List<Vector3>(positions);
-                originalNormals   = new List<List<Vector3>>(allNormals);
+                originalNormals   = DeepCopyNormals(allNormals);
                 originalDotTypes  = new List<DotType>(dotTypes);
             }
 
@@ -105,6 +106,7 @@ namespace EscapeED
             // Pre-compute tip direction so the last segment can be trimmed if needed.
             Vector3 preTipDir = (positions[n - 1] - positions[n - 2]).normalized;
 
+            Vector3 lastValidDir = preTipDir.sqrMagnitude > 0.0001f ? preTipDir : Vector3.forward;
             for (int i = 0; i < n - 1; i++)
             {
                 Vector3 a = localPos[i];
@@ -116,6 +118,13 @@ namespace EscapeED
                 float segLen = Vector3.Distance(a, b);
                 if (i == n - 2 && dotTypes[n - 1] != DotType.Face && segLen > tipLength + 0.01f)
                     b = localPos[n - 1] - preTipDir * tipLength;
+
+                // Clamp minimum segment length to prevent degenerate geometry
+                if (segLen < 0.01f)
+                {
+                    b      = a + lastValidDir * 0.01f;
+                    segLen = 0.01f;
+                }
                 
                 // Adjust U1 UV scaling if we trimmed
                 float actualU1 = (i == n - 2 && b != localPos[n - 1])
@@ -146,8 +155,11 @@ namespace EscapeED
                     else if (dotTypes[i + 1] == DotType.Face) faceN = nB;
                     else                                       faceN = nA;
 
-                    Vector3 dir   = (b - a).normalized;
-                    if (dir.sqrMagnitude < 0.0001f) dir = preTipDir;
+                    Vector3 dir = (b - a).normalized;
+                    if (dir.sqrMagnitude > 0.0001f)
+                        lastValidDir = dir;
+                    else
+                        dir = lastValidDir;
 
                     Vector3 right = Vector3.Cross(faceN, dir).normalized;
                     Vector3 lift  = faceN * surfaceOffset;
@@ -324,16 +336,25 @@ namespace EscapeED
 
             int segIndex = 0;
             int n = localPos.Count;
+            Vector3 lastValidDir = n >= 2 ? (localPos[1] - localPos[0]).normalized : Vector3.forward;
             for (int i = 0; i < n - 1; i++)
             {
-                Vector3 start = localPos[i];
-                Vector3 end = localPos[i + 1];
-                float length = Vector3.Distance(start, end);
+                Vector3 start  = localPos[i];
+                Vector3 end    = localPos[i + 1];
+                float   length = Vector3.Distance(start, end);
 
-                if (length < 0.001f) continue;
+                if (length < 0.01f)
+                {
+                    end    = start + lastValidDir * 0.01f;
+                    length = 0.01f;
+                }
 
                 Vector3 center = (start + end) / 2f;
-                Vector3 dir = (end - start).normalized;
+                Vector3 dir    = (end - start).normalized;
+                if (dir.sqrMagnitude > 0.0001f)
+                    lastValidDir = dir;
+                else
+                    dir = lastValidDir;
 
                 // Try to get a valid face normal for the 'up' direction of the box
                 Vector3 faceN = PrimaryNormal(allNormals[i]);
@@ -402,89 +423,99 @@ namespace EscapeED
 
             int n = originalPositions.Count;
 
-            // Snapshot world-space positions before detaching from the cube
-            Vector3[] worldPos = new Vector3[n];
+            // Build initial path buffer from all dot world positions (tail → head)
+            var pathBuffer = new List<Vector3>(n + 256);
             for (int i = 0; i < n; i++)
-                worldPos[i] = transform.TransformPoint(originalPositions[i]);
+                pathBuffer.Add(transform.TransformPoint(originalPositions[i]));
 
-            // Head direction in world space (parallel to the face it's on)
-            Vector3 headDir = (worldPos[n - 1] - worldPos[n - 2]).normalized;
+            Vector3 headDir  = (pathBuffer[n - 1] - pathBuffer[n - 2]).normalized;
+            float   gridStep = Vector3.Distance(pathBuffer[0], pathBuffer[1]);
+            float   speed    = gridStep / 0.10f; // one grid step per 0.10s
 
-            // One grid step = distance between adjacent dots
-            float gridStep = Vector3.Distance(worldPos[0], worldPos[1]);
-
-            // Local sliding copies of normals/types — these shift forward each step
-            // so the mesh builds correctly as positions move away from their original face
-            var slideNormals  = new List<List<Vector3>>(originalNormals);
-            var slideDotTypes = new List<DotType>(originalDotTypes);
-
-            // Detach from cube — localPos=0, localRot=identity preserved, so local==world after detach
+            // Detach from cube
             transform.SetParent(null, false);
-
-            // Move to EjectingArrow layer — URP Render Objects feature re-renders
-            // this layer after opaques with ZTest Always, so it's never clipped by the cube.
             gameObject.layer = LayerMask.NameToLayer("EjectingArrow");
 
-            // ── Phase 1: on-cube dot-by-dot slide ─────────────────────────────────
-            // Each step: body shifts forward one dot; tail drops, head advances.
-            // First n steps = arrow moves its own length (still mostly on cube).
-            // Extra steps push it off the edge entirely.
-            int   onCubeSteps   = n;
-            int   exitSteps     = 10;
-            float onStepDur     = 0.10f; // seconds per step while on cube
-            float exitStepDur   = 0.12f; // seconds per step past the edge
-
-            Vector3[] stepFrom = (Vector3[])worldPos.Clone();
-            Vector3[] stepTo   = new Vector3[n];
-
-            int totalSteps = onCubeSteps + exitSteps;
-            for (int step = 0; step < totalSteps; step++)
+            // Use head's face normal for all dots so mesh stays clean as arrow leaves cube
+            Vector3 exitNormal = PrimaryNormal(originalNormals[n - 1]);
+            var animNormals = new List<List<Vector3>>(n);
+            var animTypes   = new List<DotType>(n);
+            for (int i = 0; i < n; i++)
             {
-                float dur = step < onCubeSteps ? onStepDur : exitStepDur;
-
-                // Build target: each point moves to where the NEXT point was
-                for (int i = 0; i < n - 1; i++) stepTo[i] = stepFrom[i + 1];
-                stepTo[n - 1] = stepFrom[n - 1] + headDir * gridStep;
-
-                // Shift normals/dotTypes forward in sync with the position shift
-                slideNormals.RemoveAt(0);
-                slideNormals.Add(new List<Vector3>(slideNormals[slideNormals.Count - 1]));
-                slideDotTypes.RemoveAt(0);
-                slideDotTypes.Add(slideDotTypes[slideDotTypes.Count - 1]);
-
-                // Smooth interpolate from → to
-                float elapsed = 0f;
-                while (elapsed < dur)
-                {
-                    elapsed += Time.deltaTime;
-                    float t = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / dur));
-                    for (int i = 0; i < n; i++)
-                        worldPos[i] = Vector3.Lerp(stepFrom[i], stepTo[i], t);
-                    SetPath(new List<Vector3>(worldPos), slideNormals, slideDotTypes);
-                    yield return null;
-                }
-
-                // Commit step
-                System.Array.Copy(stepTo, stepFrom, n);
-                System.Array.Copy(stepTo, worldPos, n);
+                animNormals.Add(new List<Vector3> { exitNormal });
+                animTypes.Add(DotType.Face);
             }
 
-            // ── Phase 2: launch off screen ─────────────────────────────────────────
-            // Arrow is already a straight line after Phase 1 — just slide the
-            // transform forward. No mesh rebuild needed, avoids degenerate geometry.
-            float speed    = 0.2f;
-            float accel    = 1.2f;
-            float elapsed2 = 0f;
+            var sampledPos = new List<Vector3>(n);
 
-            while (elapsed2 < 1.5f)
+            // Phase 1: path-buffer slide
+            // Head advances continuously. Each dot samples the buffer at its own
+            // distance offset behind the head — tail is always (n-1)*gridStep behind.
+            // This makes the tail follow the exact path the head traced, including turns.
+            float totalDist = (n + 10) * gridStep;
+            float traveled  = 0f;
+
+            while (traveled < totalDist)
             {
-                elapsed2           += Time.deltaTime;
-                speed              += accel * Time.deltaTime;
-                transform.position += headDir * speed * Time.deltaTime;
+                float dt   = Time.deltaTime;
+                float step = speed * dt;
+                traveled  += step;
+
+                // Extend buffer with new head position
+                pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
+
+                // Sample each dot at its fixed distance offset behind the head
+                sampledPos.Clear();
+                for (int i = 0; i < n; i++)
+                {
+                    float offset = (float)(n - 1 - i) * gridStep;
+                    sampledPos.Add(SamplePathBuffer(pathBuffer, offset));
+                }
+
+                SetPath(sampledPos, animNormals, animTypes);
+                yield return null;
+            }
+
+            // Phase 2: launch off screen
+            float speed2  = speed;
+            float elapsed = 0f;
+            while (elapsed < 1.5f)
+            {
+                elapsed            += Time.deltaTime;
+                speed2             += 1.2f * Time.deltaTime;
+                transform.position += headDir * speed2 * Time.deltaTime;
                 yield return null;
             }
 
             Destroy(gameObject);
+        }
+
+        // Walks backwards from the end of the buffer and returns the position
+        // that is exactly targetDist away from the last entry.
+        private static List<List<Vector3>> DeepCopyNormals(List<List<Vector3>> source)
+        {
+            var copy = new List<List<Vector3>>(source.Count);
+            foreach (var inner in source)
+                copy.Add(new List<Vector3>(inner));
+            return copy;
+        }
+
+        private static Vector3 SamplePathBuffer(List<Vector3> buffer, float targetDist)
+        {
+            if (targetDist <= 0f) return buffer[buffer.Count - 1];
+
+            float accumulated = 0f;
+            for (int i = buffer.Count - 1; i > 0; i--)
+            {
+                float segLen = Vector3.Distance(buffer[i], buffer[i - 1]);
+                if (accumulated + segLen >= targetDist)
+                {
+                    float t = (targetDist - accumulated) / segLen;
+                    return Vector3.Lerp(buffer[i], buffer[i - 1], t);
+                }
+                accumulated += segLen;
+            }
+            return buffer[0];
         }
 
         // ── Interaction Helpers ───────────────────────────────────────────────────
@@ -522,21 +553,75 @@ namespace EscapeED
 
         private System.Collections.IEnumerator BlockedShakeCoroutine()
         {
-            GetEjectionData(out _, out Vector3 tipDir, out _);
-            Vector3 startPos = transform.localPosition;
-            
-            float duration = 0.15f;
-            float elapsed = 0f;
-            while(elapsed < duration)
+            if (originalPositions == null || originalPositions.Count < 2)
             {
-                elapsed += Time.deltaTime;
-                float t = elapsed / duration;
-                // A quick push forward and snap back using sine wave
-                float offset = Mathf.Sin(t * Mathf.PI) * (lineWidth * 1.5f); 
-                transform.localPosition = startPos + transform.InverseTransformDirection(tipDir) * offset;
+                activeShake = null;
+                yield break;
+            }
+
+            int n = originalPositions.Count;
+            isAnimating = true;
+
+            // Deep-copy snapshot before any SetPath calls can corrupt state
+            var stablePositions = new List<Vector3>(originalPositions);
+            var stableNormals   = DeepCopyNormals(originalNormals);
+            var stableDotTypes  = new List<DotType>(originalDotTypes);
+
+            // Build path buffer from original dot world positions (tail → head)
+            var pathBuffer = new List<Vector3>(n + 64);
+            for (int i = 0; i < n; i++)
+                pathBuffer.Add(transform.TransformPoint(originalPositions[i]));
+
+            Vector3 headDir  = (pathBuffer[n - 1] - pathBuffer[n - 2]).normalized;
+            float   gridStep = Vector3.Distance(pathBuffer[0], pathBuffer[1]);
+            float   pushDist = gridStep * 0.5f; // how far head pushes forward
+            float   speed    = gridStep / 0.08f; // fast push
+
+            var sampledPos = new List<Vector3>(n);
+
+            // Phase A: head pushes forward, tail follows
+            float traveled = 0f;
+            while (traveled < pushDist)
+            {
+                float dt   = Time.deltaTime;
+                float step = Mathf.Min(speed * dt, pushDist - traveled);
+                traveled  += step;
+
+                pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
+
+                sampledPos.Clear();
+                for (int i = 0; i < n; i++)
+                {
+                    float offset = (float)(n - 1 - i) * gridStep;
+                    sampledPos.Add(SamplePathBuffer(pathBuffer, offset));
+                }
+                SetPath(sampledPos, originalNormals, originalDotTypes);
                 yield return null;
             }
-            transform.localPosition = startPos;
+
+            // Phase B: head pulls back, tail follows
+            traveled = 0f;
+            while (traveled < pushDist)
+            {
+                float dt   = Time.deltaTime;
+                float step = Mathf.Min(speed * dt, pushDist - traveled);
+                traveled  += step;
+
+                pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] - headDir * step);
+
+                sampledPos.Clear();
+                for (int i = 0; i < n; i++)
+                {
+                    float offset = (float)(n - 1 - i) * gridStep;
+                    sampledPos.Add(SamplePathBuffer(pathBuffer, offset));
+                }
+                SetPath(sampledPos, originalNormals, originalDotTypes);
+                yield return null;
+            }
+
+            // Restore exact original positions using the pre-animation snapshot
+            isAnimating = false;
+            SetPath(stablePositions, stableNormals, stableDotTypes);
             activeShake = null;
         }
 
