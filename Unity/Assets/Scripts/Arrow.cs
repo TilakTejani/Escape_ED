@@ -67,20 +67,24 @@ namespace EscapeED
             if (arrowMaterial != null) mr.material = arrowMaterial;
         }
 
-        public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes)
+        public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes, bool useWorldSpace = true)
         {
-            if (positions.Count < 2) return;
+            if (positions == null || positions.Count == 0) return;
 
-            // 2. Setup Context (must come first — ctx.localPos is used for the snapshot)
-            var ctx = CreateBuildContext(positions, allNormals, dotTypes);
-
-            // 1. Snapshot in LOCAL space so GetEjectionData and animations stay correct after cube rotation
+            // 1. Snapshot for non-animating state (The Local-Space Contract)
             if (!isEjecting && !isAnimating)
             {
-                originalPositions = new List<Vector3>(ctx.localPos);
+                // Note: ArrowAnimator handles the restore via SetPath(..., false)
+                // so we don't snapshot during animation/ejection to avoid corrupting the buffer.
+                originalPositions = new List<Vector3>(useWorldSpace ? ProjectToLocal(positions) : positions);
                 originalNormals   = ArrowAnimator.DeepCopyNormals(allNormals);
                 originalDotTypes  = new List<DotType>(dotTypes);
+                
+                VerifyLocalSpace(originalPositions);
             }
+
+            // 2. Setup Context
+            var ctx = CreateBuildContext(positions, allNormals, dotTypes, useWorldSpace);
 
             // 3. Execution Pipeline (Delegated to ArrowMeshBuilder)
             ArrowMeshBuilder.BuildBody(ctx);
@@ -97,7 +101,14 @@ namespace EscapeED
             }
         }
 
-        private ArrowMeshBuilder.Context CreateBuildContext(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes)
+        private List<Vector3> ProjectToLocal(List<Vector3> worldPositions)
+        {
+            var local = new List<Vector3>(worldPositions.Count);
+            foreach (var p in worldPositions) local.Add(transform.InverseTransformPoint(p));
+            return local;
+        }
+
+        private ArrowMeshBuilder.Context CreateBuildContext(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes, bool useWorldSpace)
         {
             if (mf.sharedMesh == null) 
             {
@@ -113,7 +124,12 @@ namespace EscapeED
 
             var localPos = new List<Vector3>(n);
             for (int i = 0; i < n; i++)
-                localPos.Add(transform.InverseTransformPoint(positions[i]));
+            {
+                if (useWorldSpace)
+                    localPos.Add(transform.InverseTransformPoint(positions[i]));
+                else
+                    localPos.Add(positions[i]);
+            }
 
             float[] dist = new float[n];
             dist[0] = 0f;
@@ -193,6 +209,21 @@ namespace EscapeED
         }
 
         public event System.Action<Arrow> OnInteractionTriggered;
+        
+        private void VerifyLocalSpace(List<Vector3> localPoints)
+        {
+            if (localPoints == null || localPoints.Count == 0) return;
+            // Typical cube size is small. If points are > 50 units from origin, 
+            // they are almost certainly world coordinates being misidentified as local.
+            foreach (var p in localPoints)
+            {
+                if (p.sqrMagnitude > 2500f) // 50^2
+                {
+                    Debug.LogError($"[EscapeED] Coordinate Space Violation: {name} stored world positions in local originalPositions buffer. This will cause 'Ghost Paths' after rotation.");
+                    break;
+                }
+            }
+        }
 
         private void OnDrawGizmosSelected()
         {

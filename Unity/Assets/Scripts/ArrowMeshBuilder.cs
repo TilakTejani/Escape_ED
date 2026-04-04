@@ -175,10 +175,13 @@ namespace EscapeED
                                ctx.verts, ctx.tris, ctx.uvs, ctx.meshNormals);
 
                     Vector3 edgeLift = GetCorrectedLift(edgeTN1, edgeTN2, ctx.surfaceOffset);
-                    tipVerts.Add(tipPos + GetCorrectedLift(ctx.allNormals[ctx.n - 1], ctx.surfaceOffset));
+                    // To avoid [Physics.PhysX] coplanar errors, we must provide at least one non-coplanar point for the Convex MeshCollider.
+                    // Adding tipPos (on the surface) while others are lifted (edgeLift) creates a 3D wedge.
+                    tipVerts.Add(tipPos + GetCorrectedLift(ctx.allNormals[ctx.n - 1], ctx.surfaceOffset)); // Apex
                     tipVerts.Add(tipPos - tipDir * ctx.tipLength + edgeLift + InwardDir(edgeTN1, tipDir, edgeTN2) * ctx.tipHalfWidth + edgeTN1 * ctx.surfaceOffset);
                     tipVerts.Add(tipPos - tipDir * ctx.tipLength + edgeLift + InwardDir(edgeTN2, tipDir, edgeTN1) * ctx.tipHalfWidth + edgeTN2 * ctx.surfaceOffset);
                     tipVerts.Add(tipPos - tipDir * ctx.tipLength + edgeLift);
+                    tipVerts.Add(tipPos - tipDir * ctx.tipLength); // Non-lifted base point to ensure volume
                 }
                 else
                 {
@@ -215,7 +218,12 @@ namespace EscapeED
                 ctx.tris.AddRange(new[] { ti + 2, ti + 1, ti });
                 ctx.meshNormals.Add(tipNormal); ctx.meshNormals.Add(tipNormal); ctx.meshNormals.Add(tipNormal);
 
-                tipVerts.AddRange(new[] { apex, baseL, baseR, tipPos + tipLift });
+                // Index 0 (apex) is used as the fan center in ArrowPhysicsHandler. 
+                // By adding tipPos (WITHOUT lift), we guarantee a 3D volume (pyramid/wedge).
+                tipVerts.Add(apex);         
+                tipVerts.Add(baseL);        
+                tipVerts.Add(baseR);        
+                tipVerts.Add(tipPos); // Non-lifted center base point for volume
             }
         }
 

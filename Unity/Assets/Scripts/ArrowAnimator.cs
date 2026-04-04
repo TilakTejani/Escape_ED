@@ -112,8 +112,8 @@ namespace EscapeED
                 yield return null;
             }
 
-            // Restore
-            _owner.SetPath(originalPositions, originalNormals, originalDotTypes);
+            // Restore to perfect local coordinates (skipping world-to-local conversion)
+            _owner.SetPath(originalPositions, originalNormals, originalDotTypes, false);
         }
 
         public static List<List<Vector3>> DeepCopyNormals(List<List<Vector3>> source)
