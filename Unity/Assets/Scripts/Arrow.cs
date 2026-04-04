@@ -21,6 +21,13 @@ namespace EscapeED
         // Hidden from inspector as they are now derived
         [HideInInspector] public float tipLength; 
 
+        private const float EPS          = 0.0001f; // near-zero threshold for direction/normal checks
+        private const float MIN_SEG      = 0.01f;   // minimum segment length to prevent degenerate geometry
+        private const float STRAIGHT_DOT = 0.99f;   // dot product threshold for treating two dirs as parallel
+
+        [Header("Shading")]
+        public bool smoothShading = false;
+
         private MeshFilter   mf;
         private MeshRenderer mr;
         private List<BoxCollider> segmentColliders = new List<BoxCollider>();
@@ -30,6 +37,11 @@ namespace EscapeED
         private readonly List<int>     _tris        = new List<int>(1024);
         private readonly List<Vector2> _uvs         = new List<Vector2>(512);
         private readonly List<Vector3> _meshNormals = new List<Vector3>(512);
+
+        // Tip convex collider
+        private readonly List<Vector3> _tipVerts    = new List<Vector3>(8);
+        private Mesh                   _tipColliderMesh;
+        private MeshCollider           _tipColliderComp;
 
         private List<Vector3>      originalPositions;
         private List<List<Vector3>> originalNormals;
@@ -113,7 +125,7 @@ namespace EscapeED
             // Pre-compute tip direction so the last segment can be trimmed if needed.
             Vector3 preTipDir = (positions[n - 1] - positions[n - 2]).normalized;
 
-            Vector3 lastValidDir = preTipDir.sqrMagnitude > 0.0001f ? preTipDir : Vector3.forward;
+            Vector3 lastValidDir = preTipDir.sqrMagnitude > EPS ? preTipDir : Vector3.forward;
             for (int i = 0; i < n - 1; i++)
             {
                 Vector3 a = localPos[i];
@@ -123,14 +135,14 @@ namespace EscapeED
                 // preventing the body from overlapping the wider arrowhead wings.
                 // SAFETY: Only trim if the segment is long enough to avoid degenerate flipping.
                 float segLen = Vector3.Distance(a, b);
-                if (i == n - 2 && dotTypes[n - 1] != DotType.Face && segLen > tipLength + 0.01f)
+                if (i == n - 2 && !IsFaceDot(dotTypes[n - 1]) && segLen > tipLength + MIN_SEG)
                     b = localPos[n - 1] - preTipDir * tipLength;
 
                 // Clamp minimum segment length to prevent degenerate geometry
-                if (segLen < 0.01f)
+                if (segLen < MIN_SEG)
                 {
-                    b      = a + lastValidDir * 0.01f;
-                    segLen = 0.01f;
+                    b      = a + lastValidDir * MIN_SEG;
+                    segLen = MIN_SEG;
                 }
                 
                 // Adjust U1 UV scaling if we trimmed
@@ -159,11 +171,11 @@ namespace EscapeED
                     // ── Normal: single quad on face-interior's face ───────────────
                     Vector3 faceN;
                     if      (dotTypes[i]     == DotType.Face) faceN = nA;
-                    else if (dotTypes[i + 1] == DotType.Face) faceN = nB;
+                    else if (IsFaceDot(dotTypes[i + 1])) faceN = nB;
                     else                                       faceN = nA;
 
                     Vector3 dir = (b - a).normalized;
-                    if (dir.sqrMagnitude > 0.0001f)
+                    if (dir.sqrMagnitude > EPS)
                         lastValidDir = dir;
                     else
                         dir = lastValidDir;
@@ -196,7 +208,7 @@ namespace EscapeED
                 if (IsFoldSeg(i - 1, allNormals, dotTypes)) continue;
                 if (IsFoldSeg(i,     allNormals, dotTypes)) continue;
 
-                if (dotTypes[i] != DotType.Face)
+                if (!IsFaceDot(dotTypes[i]))
                 {
                     // Edge/corner bend: AddFoldedRoundCap handles multi-face arc splitting correctly.
                     // Minor overlap with segment ends is acceptable vs a flat cut.
@@ -208,7 +220,7 @@ namespace EscapeED
 
                 Vector3 dirIn  = (localPos[i]     - localPos[i - 1]).normalized;
                 Vector3 dirOut = (localPos[i + 1] - localPos[i]    ).normalized;
-                if (Vector3.Dot(dirIn, dirOut) > 0.99f) continue; // straight — nothing to fill
+                if (Vector3.Dot(dirIn, dirOut) > STRAIGHT_DOT) continue; // straight — nothing to fill
 
                 Vector3 faceN  = PrimaryNormal(allNormals[i]);
                 Vector3 lift   = faceN * surfaceOffset;
@@ -247,7 +259,9 @@ namespace EscapeED
             Vector3 tipDir = (localPos[n - 1] - localPos[n - 2]).normalized;
             float   uBase  = dist[n - 1] / totalDist;
 
-            if (dotTypes[n - 1] != DotType.Face)
+            _tipVerts.Clear();
+
+            if (!IsFaceDot(dotTypes[n - 1]))
             {
                 // Tip is on an edge or corner — apex pulled back to tipPos so nothing floats off surface.
                 Vector3 edgeTN1, edgeTN2;
@@ -260,8 +274,15 @@ namespace EscapeED
                     // Pass tip's full normals so apex uses correct lift (corner = 3 normals).
                     // tipHalfWidth is (lineWidth * tipWidthMult) * 0.5f
                     AddFoldTip(tipPos, tipDir, edgeTN1, edgeTN2, allNormals[n - 1],
-                               tipHalfWidth, tipLength, surfaceOffset, uBase,
+                               tipHalfWidth, tipLength, surfaceOffset, uBase, totalDist,
                                verts, tris, uvs, meshNormals);
+
+                    // Approximate tip convex hull from fold geometry
+                    Vector3 edgeLift = GetCorrectedLift(edgeTN1, edgeTN2, surfaceOffset);
+                    _tipVerts.Add(tipPos + GetCorrectedLift(allNormals[n - 1], surfaceOffset));
+                    _tipVerts.Add(tipPos - tipDir * tipLength + edgeLift + InwardDir(edgeTN1, tipDir, edgeTN2) * tipHalfWidth + edgeTN1 * surfaceOffset);
+                    _tipVerts.Add(tipPos - tipDir * tipLength + edgeLift + InwardDir(edgeTN2, tipDir, edgeTN1) * tipHalfWidth + edgeTN2 * surfaceOffset);
+                    _tipVerts.Add(tipPos - tipDir * tipLength + edgeLift);
                 }
                 else
                 {
@@ -285,6 +306,8 @@ namespace EscapeED
                     // Correct Winding: Outward (baseR -> baseL -> apex)
                     tris.AddRange(new[] { ti + 2, ti + 1, ti });
                     meshNormals.Add(faceN); meshNormals.Add(faceN); meshNormals.Add(faceN);
+
+                    _tipVerts.Add(apex); _tipVerts.Add(baseL); _tipVerts.Add(baseR);
                 }
             }
             else
@@ -308,6 +331,9 @@ namespace EscapeED
                 // Winding: baseR -> baseL -> apex
                 tris.AddRange(new[] { ti + 2, ti + 1, ti });
                 meshNormals.Add(tipNormal); meshNormals.Add(tipNormal); meshNormals.Add(tipNormal);
+
+                _tipVerts.Add(apex); _tipVerts.Add(baseL); _tipVerts.Add(baseR);
+                _tipVerts.Add(tipPos + tipLift); // base center for fuller hull
             }
 
             // ── Build mesh ───────────────────────────────────────────────────────
@@ -316,16 +342,34 @@ namespace EscapeED
             for (int vi = 0; vi < meshNormals.Count; vi++)
                 uv2s[vi] = new Vector2(FaceIndexFromNormal(meshNormals[vi]), 0f);
 
-            mesh.vertices  = verts.ToArray();
-            mesh.triangles = tris.ToArray();
-            mesh.uv        = uvs.ToArray();
-            mesh.uv2       = uv2s;
-            mesh.normals   = meshNormals.ToArray();
-            mesh.RecalculateBounds();
+            mesh.SetVertices(_verts);
+            mesh.SetTriangles(_tris, 0);
+            mesh.SetUVs(0, _uvs);
+            mesh.uv2 = uv2s;
+
+            if (smoothShading)
+                mesh.RecalculateNormals();
+            else
+                mesh.SetNormals(_meshNormals);
+
+            // Manual bounds — faster than RecalculateBounds()
+            if (_verts.Count > 0)
+            {
+                Vector3 bMin = _verts[0], bMax = _verts[0];
+                for (int vi = 1; vi < _verts.Count; vi++)
+                {
+                    Vector3 v = _verts[vi];
+                    bMin = Vector3.Min(bMin, v);
+                    bMax = Vector3.Max(bMax, v);
+                }
+                mesh.bounds = new Bounds((bMin + bMax) * 0.5f, bMax - bMin);
+            }
+
             mf.sharedMesh = mesh;
 
-            // ── Update Box Colliders ──────────────────────────────────────────────
+            // ── Update Colliders ──────────────────────────────────────────────────
             UpdateSegmentColliders(localPos, allNormals, dotTypes);
+            UpdateTipCollider();
             
         }
 
@@ -351,21 +395,21 @@ namespace EscapeED
                 Vector3 end    = localPos[i + 1];
                 float   length = Vector3.Distance(start, end);
 
-                if (length < 0.01f)
+                if (length < MIN_SEG)
                 {
-                    end    = start + lastValidDir * 0.01f;
-                    length = 0.01f;
+                    end    = start + lastValidDir * MIN_SEG;
+                    length = MIN_SEG;
                 }
 
                 Vector3 center = (start + end) / 2f;
                 Vector3 dir    = (end - start).normalized;
-                if (dir.sqrMagnitude > 0.0001f)
+                if (dir.sqrMagnitude > EPS)
                     lastValidDir = dir;
                 else
                     dir = lastValidDir;
 
                 Vector3 faceN = PrimaryNormal(allNormals[i]);
-                if (dotTypes[i] != DotType.Face && dotTypes[i + 1] == DotType.Face)
+                if (!IsFaceDot(dotTypes[i]) && IsFaceDot(dotTypes[i + 1]))
                     faceN = PrimaryNormal(allNormals[i + 1]);
 
                 Quaternion rot = Quaternion.LookRotation(dir, faceN);
@@ -395,6 +439,37 @@ namespace EscapeED
             // Disable unused pooled colliders
             for (int i = segIndex; i < segmentColliders.Count; i++)
                 if (segmentColliders[i] != null) segmentColliders[i].gameObject.SetActive(false);
+        }
+
+        private void UpdateTipCollider()
+        {
+            if (isEjecting || _tipVerts.Count < 3) return;
+
+            if (_tipColliderComp == null)
+            {
+                var obj = new GameObject("TipCollider");
+                obj.transform.SetParent(transform, false);
+                obj.layer          = gameObject.layer;
+                _tipColliderComp   = obj.AddComponent<MeshCollider>();
+                _tipColliderComp.convex = true;
+                _tipColliderMesh   = new Mesh { name = "TipConvex" };
+                _tipColliderMesh.MarkDynamic();
+            }
+
+            _tipColliderMesh.Clear();
+            _tipColliderMesh.SetVertices(_tipVerts);
+
+            // Fan triangulation from first vertex for convex hull input
+            var tipTris = new List<int>((_tipVerts.Count - 2) * 3);
+            for (int i = 1; i < _tipVerts.Count - 1; i++)
+            {
+                tipTris.Add(0); tipTris.Add(i); tipTris.Add(i + 1);
+            }
+            _tipColliderMesh.SetTriangles(tipTris, 0);
+
+            _tipColliderComp.sharedMesh = null;
+            _tipColliderComp.sharedMesh = _tipColliderMesh;
+            _tipColliderComp.gameObject.SetActive(true);
         }
 
         private void OnDrawGizmosSelected()
@@ -571,9 +646,9 @@ namespace EscapeED
             int n = originalPositions.Count;
             isAnimating = true;
 
-            // Deep-copy snapshot before any SetPath calls can corrupt state
+            // Snapshot before animation — shallow copy of normals is safe since inner lists are never mutated
             var stablePositions = new List<Vector3>(originalPositions);
-            var stableNormals   = DeepCopyNormals(originalNormals);
+            var stableNormals   = new List<List<Vector3>>(originalNormals);
             var stableDotTypes  = new List<DotType>(originalDotTypes);
 
             // Build path buffer from original dot world positions (tail → head)
@@ -687,6 +762,10 @@ namespace EscapeED
         }
 
         // Maps a cube face normal to an index 0-5 used by the shader for per-face fading.
+        static bool IsFaceDot  (DotType t) => t == DotType.Face;
+        static bool IsEdgeDot  (DotType t) => t == DotType.Edge;
+        static bool IsCornerDot(DotType t) => t == DotType.Corner;
+
         // Must match the order in GhostCubeController.CubeFaceNormals.
         static float FaceIndexFromNormal(Vector3 n)
         {
@@ -810,7 +889,7 @@ namespace EscapeED
         static void AddFoldTip(
             Vector3 tipPos, Vector3 tipDir,
             Vector3 n1, Vector3 n2, List<Vector3> tipNormals,
-            float width, float length, float offset, float uBase,
+            float width, float length, float offset, float uBase, float totalDist,
             List<Vector3> verts, List<int> tris,
             List<Vector2> uvs, List<Vector3> normals)
         {
@@ -828,7 +907,7 @@ namespace EscapeED
             Vector3 wing1      = basePos + in1 * width + n1 * offset;
             Vector3 wing2      = basePos + in2 * width + n2 * offset;
 
-            float uBack = Mathf.Max(0f, uBase - length / (length + 0.001f) * uBase);
+            float uBack = Mathf.Max(0f, uBase - length / totalDist);
 
             // Face 1 triangle
             int ti = verts.Count;
