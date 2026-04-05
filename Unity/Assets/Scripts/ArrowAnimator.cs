@@ -50,22 +50,39 @@ namespace EscapeED
             Vector3 headDir = (pathBuffer[n - 1] - pathBuffer[n - 2]).normalized;
             float speed = gridStep / 0.10f;
 
-            // 4. ANIMATION DATA: Use original dot types to maintain visual fidelity (folds/bends).
-            var sampledPos = new List<Vector3>(n);
-            float totalDist = (n + 10) * gridStep;
-            float traveled = 0f;
+            // 4. ANIMATION DATA: Folds unpeel correctly as dots slide off the original path.
+            // activeNormals/activeDotTypes start as copies of the original data.
+            // As 'traveled' advances past each gridStep, the tail dot is flattened to Face
+            // geometry — preventing phantom fold kinks from appearing in free air.
+            var sampledPos    = new List<Vector3>(n);
+            var activeNormals  = new List<List<Vector3>>(worldNormals);
+            var activeDotTypes = new List<DotType>(originalDotTypes);
+
+            // Shared flat-normal list reused for all consumed indices (no per-frame alloc).
+            var flatNormal = new List<Vector3> { worldNormals[n - 1].Count > 0 ? worldNormals[n - 1][0] : Vector3.up };
+
+            float totalDist  = (n + 10) * gridStep;
+            float traveled   = 0f;
+            int   lastConsumed = 0;
 
             while (traveled < totalDist)
             {
                 float step = speed * Time.deltaTime;
                 traveled += step;
                 pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
-                
+
                 SamplePathBufferAll(pathBuffer, n, gridStep, sampledPos);
-                
-                // Use the captured worldNormals and originalDotTypes.
-                // Note: As the arrow slides, the 'folds' naturally travel with the body.
-                _owner.SetPath(sampledPos, worldNormals, originalDotTypes);
+
+                // Flatten tail dots that have physically left the original path.
+                int consumed = Mathf.Min(Mathf.FloorToInt(traveled / gridStep), n);
+                for (int i = lastConsumed; i < consumed; i++)
+                {
+                    activeNormals[i]  = flatNormal;
+                    activeDotTypes[i] = DotType.Face;
+                }
+                lastConsumed = consumed;
+
+                _owner.SetPath(sampledPos, activeNormals, activeDotTypes);
                 yield return null;
             }
 

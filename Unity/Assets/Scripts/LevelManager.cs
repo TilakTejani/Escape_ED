@@ -12,16 +12,14 @@ namespace EscapeED
 
         [Header("Prefabs")]
         public GameObject arrowPrefab;
-        public Material   arrowMaterial; // Assign ArrowPulseMat here
 
         [Header("References")]
         public CubeGrid grid;
-        public bool forceWhiteBackground = true; 
-        public LayerMask arrowLayer; // Use Layer 6 (Arrow) in Inspector
-        public CubeNavigator navigator;
+        public bool forceWhiteBackground = true;
+        public LayerMask arrowLayer;
+        private CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
-        public GhostCubeController   ghostController;
 
         private void OnEnable()
         {
@@ -161,8 +159,6 @@ namespace EscapeED
             arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(arrowObj);
 
-            if (ghostController != null)
-                ghostController.RegisterArrow(arrowObj.GetComponent<MeshRenderer>());
         }
 
         private void ClearActiveLevel()
@@ -170,7 +166,6 @@ namespace EscapeED
             foreach (var arrow in activeArrows)
                 if (arrow != null) Destroy(arrow);
             activeArrows.Clear();
-            if (ghostController != null) ghostController.ClearArrows();
         }
 
         private void AutoFrameCamera()
@@ -221,7 +216,6 @@ namespace EscapeED
         void Awake()
         {
             navigator       = GetComponent<CubeNavigator>();
-            if (grid != null) ghostController = grid.GetComponent<GhostCubeController>();
         }
 
         void Start()
@@ -268,8 +262,6 @@ namespace EscapeED
             }
             else
             {
-                if (ghostController != null)
-                    ghostController.UnregisterArrow(arrow.GetComponent<MeshRenderer>());
                 arrow.Eject();
                 activeArrows.Remove(arrow.gameObject);
             }
@@ -379,8 +371,6 @@ namespace EscapeED
             arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(obj);
 
-            if (ghostController != null)
-                ghostController.RegisterArrow(obj.GetComponent<MeshRenderer>());
         }
     }
 }
