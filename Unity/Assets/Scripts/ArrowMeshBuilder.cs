@@ -141,7 +141,7 @@ namespace EscapeED
             {
                 bool prevFold = IsFoldSeg(i - 1, ctx.allNormals, ctx.dotTypes);
                 bool nextFold = IsFoldSeg(i,     ctx.allNormals, ctx.dotTypes);
-                if (prevFold && nextFold) continue;
+                if (prevFold && nextFold && ctx.dotTypes[i] != DotType.Corner) continue;
 
                 if (ctx.dotTypes[i] != DotType.Face)
                 {
