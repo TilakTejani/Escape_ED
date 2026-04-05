@@ -116,6 +116,37 @@ Without `break`, one nA can match multiple nBs, over-counting shared normals.
 
 **`AddFoldTip`** — wing vertices must use `n1 * offset` lift only (face-level lift). Adding `edgeLift` on top causes double-lift and floats wings above the surface.
 
+### `BuildBends` — Winding & Guard Rules
+
+**`AddBendArc` winding depends on `angleTo` sign:**
+```csharp
+// CORRECT — branch on sweep direction
+if (angleTo < 0f)
+    tris.AddRange(new[] { centerIdx, arcStart + s + 1, arcStart + s });
+else
+    tris.AddRange(new[] { centerIdx, arcStart + s, arcStart + s + 1 });
+```
+`basisV = Cross(faceN, basisU)` makes positive angles sweep CW (viewed from faceN). A fixed winding only works for one turn direction — the other produces backfacing (invisible) arc triangles.
+
+**Inner triangle winding must be checked, not hardcoded:**
+```csharp
+Vector3 edgeA = innerA - center, edgeB = innerB - center;
+if (Vector3.Dot(Vector3.Cross(edgeA, edgeB), faceN) > 0f)
+    ctx.tris.AddRange(new[] { ti + 1, ti + 2, ti });
+else
+    ctx.tris.AddRange(new[] { ti, ti + 2, ti + 1 });
+```
+`outsideSign` flips between left and right turns, so a fixed winding for the inner triangle is always backfacing for one direction.
+
+**Fold-seg guard must not skip Corner dots:**
+```csharp
+if (prevFold && nextFold && ctx.dotTypes[i] != DotType.Corner) continue;
+```
+Skipping when both adjacent segments are fold segs is correct for Edge dots (fold quads cover the shared edge). But Corner dots (3 normals) always have an exposed third face that fold quads never cover — `AddFoldedRoundCap` must run to fill it.
+
+**Transition bends (one fold seg, one non-fold) must not be skipped:**
+The guard `if (prevFold && nextFold)` is intentional — `if (prevFold || nextFold)` would be wrong. A single fold-seg adjacent means the edge dot is at a face↔edge transition; `AddFoldedRoundCap` with the edge dot's multi-face normals correctly bridges the lift gap.
+
 ### Blocking Detection
 
 `IsArrowBlocked` uses `LayerMask.GetMask(ArrowConstants.LAYER_ARROW)` — computed at runtime from the layer name. Do NOT use the inspector `LayerMask arrowLayer` field for this query; it defaults to 0 (nothing) if not set in the Inspector.
