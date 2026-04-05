@@ -139,8 +139,9 @@ namespace EscapeED
             float halfW = ctx.lineWidth * 0.5f;
             for (int i = 1; i < ctx.n - 1; i++)
             {
-                if (IsFoldSeg(i - 1, ctx.allNormals, ctx.dotTypes)) continue;
-                if (IsFoldSeg(i,     ctx.allNormals, ctx.dotTypes)) continue;
+                bool prevFold = IsFoldSeg(i - 1, ctx.allNormals, ctx.dotTypes);
+                bool nextFold = IsFoldSeg(i,     ctx.allNormals, ctx.dotTypes);
+                if (prevFold && nextFold) continue;
 
                 if (ctx.dotTypes[i] != DotType.Face)
                 {
@@ -176,7 +177,11 @@ namespace EscapeED
                 ctx.uvs.AddRange(new[] {
                     new Vector2(ctx.dist[i] / ctx.totalDist, 0.5f), new Vector2(ctx.dist[i] / ctx.totalDist, 0f), new Vector2(ctx.dist[i] / ctx.totalDist, 1f)
                 });
-                ctx.tris.AddRange(new[] { ti + 1, ti + 2, ti });
+                Vector3 edgeA = innerA - center, edgeB = innerB - center;
+                if (Vector3.Dot(Vector3.Cross(edgeA, edgeB), faceN) > 0f)
+                    ctx.tris.AddRange(new[] { ti + 1, ti + 2, ti });
+                else
+                    ctx.tris.AddRange(new[] { ti, ti + 2, ti + 1 });
                 ctx.meshNormals.Add(faceN); ctx.meshNormals.Add(faceN); ctx.meshNormals.Add(faceN);
             }
         }
@@ -463,7 +468,12 @@ namespace EscapeED
                 normals.Add(faceN);
             }
             for (int s = 0; s < steps; s++)
-                tris.AddRange(new[] { centerIdx, arcStart + s + 1, arcStart + s });
+            {
+                if (angleTo < 0f)
+                    tris.AddRange(new[] { centerIdx, arcStart + s + 1, arcStart + s });
+                else
+                    tris.AddRange(new[] { centerIdx, arcStart + s, arcStart + s + 1 });
+            }
         }
 
         static Vector3 GetCorrectedLift(List<Vector3> normals, float offset)
