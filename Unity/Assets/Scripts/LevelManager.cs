@@ -239,6 +239,8 @@ namespace EscapeED
             }
             else
             {
+                if (ghostController != null)
+                    ghostController.UnregisterArrow(arrow.GetComponent<MeshRenderer>());
                 arrow.Eject();
                 activeArrows.Remove(arrow.gameObject);
             }

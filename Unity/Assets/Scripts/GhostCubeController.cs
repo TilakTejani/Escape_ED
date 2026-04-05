@@ -54,6 +54,12 @@ namespace EscapeED
             arrowRenderers.Clear();
         }
 
+        public void UnregisterArrow(MeshRenderer renderer)
+        {
+            if (arrowRenderers.Remove(renderer) && renderer != null)
+                renderer.SetPropertyBlock(null);
+        }
+
         private Color GetRendererBaseColor(MeshRenderer r)
         {
             if (r.sharedMaterial.HasProperty(BaseColorId))
