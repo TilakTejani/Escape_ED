@@ -40,7 +40,7 @@ Camera
 | `ArrowAnimator.cs` | Eject and blocked-shake coroutines, path buffer interpolation |
 | `ArrowConstants.cs` | All magic numbers — dimensions, thresholds, timings, layer names |
 | `CubeRotator.cs` | Camera orbit with inertia, pinch/scroll zoom, dynamic zoom limits |
-| `GhostCubeController.cs` | Fresnel-based face transparency, arrow renderer alpha management |
+| `GhostCubeController.cs` | Fresnel-based face transparency; pushes `_MinArrowAlpha` global to shader |
 | `InputReader.cs` | Hardware abstraction — unifies touchscreen + mouse into TouchData events |
 | `InputController.cs` | Gesture detection — tap duration/distance thresholds, per-finger state |
 | `InteractionSystem.cs` | Raycasts screen taps to IInteractable in 3D world, UI pointer guard |
@@ -91,7 +91,8 @@ This prevents "ghost paths" when the cube rotates during ejection. `GetEjectionD
 | `OverlapCapsuleNonAlloc` | `LevelManager.IsArrowBlocked` |
 | Pooled `BoxCollider` children | `ArrowPhysicsHandler._segmentColliders` |
 | Reusable `List<>` buffers (`_verts`, `_tris`, etc.) | `Arrow` |
-| `MaterialPropertyBlock` (no material instantiation) | `GhostCubeController` |
+| `MaterialPropertyBlock` per face renderer (no material instantiation) | `GhostCubeController` |
+| `Shader.SetGlobalFloat` for arrow alpha (one call, affects all arrows) | `GhostCubeController.LateUpdate` |
 
 ### Input Abstraction Layers
 ```
@@ -100,6 +101,32 @@ InputController    ← gestures (tap vs. drag, per-finger state)
 InteractionSystem  ← world bridge (raycast + UI guard)
 ```
 Each layer is independently testable and replaceable.
+
+### Arrow Transparency System (Shader-Side)
+
+Arrow alpha is computed entirely in `ArrowPulsing.shader` using vertex normals — no per-arrow CPU work.
+
+```hlsl
+float3 cubeToCam = normalize(_WorldSpaceCameraPos.xyz - input.positionWS);
+float  d         = dot(normalize(input.normalWS), cubeToCam);
+float  t         = saturate(d / 0.2 + 1.0);
+finalColor.a     = lerp(_MinArrowAlpha, 1.0, t);
+```
+
+- Vertices whose surface normal faces the camera → fully opaque
+- Vertices whose surface normal faces away → fade to `_MinArrowAlpha`
+- `GhostCubeController` sets `_MinArrowAlpha` as a global shader float once per frame
+
+**Why not the old face-index lookup:**
+The previous approach stored a face index (0–5) in `uv2` per vertex, had the CPU compute 6 face alphas, and pushed them via `MaterialPropertyBlock` to every arrow renderer. This broke on rotated cubes (index mapping assumed axis-aligned normals), required registering/unregistering each renderer, and failed during ejection (world-space normals misclassified as wrong face).
+
+**Shape-agnostic:** The shader only uses the vertex normal and camera direction — no knowledge of how many faces the object has. Works correctly for any shape without modification.
+
+**Ejection:** When the arrow detaches from the cube, its mesh normals are world-space captured before detach. The shader computes correct alpha from those normals automatically — no special ejection handling needed.
+
+**`arrowEjectMaterial`:** `Arrow.Eject()` switches to this material if assigned in the Inspector. Allows a distinct visual (glow, dissolve, etc.) the moment an arrow starts flying.
+
+---
 
 ### Static Mesh Builder
 `ArrowMeshBuilder` is a static utility class with a `Context` struct that carries all state. This avoids MonoBehaviour overhead and keeps the mesh pipeline functional — each stage (`BuildBody`, `BuildTailCap`, `BuildBends`, `BuildTip`) is a pure transformation on the context.
@@ -142,7 +169,7 @@ The entire bottom layer does not know it is on a cube:
 
 **`CubeNavigator`** — uses `Vector3Int` grid math. Arbitrary shapes require graph-based adjacency.
 
-**`GhostCubeController`** — hardcoded 6-face normal array. Needs to be N-face generic.
+**`GhostCubeController`** — arrow transparency is already shape-agnostic (shader-side, uses vertex normals). Face transparency still uses a hardcoded `CubeFaceNormals[6]` array — needs to become N-face generic for non-cube shapes.
 
 **`LevelSchema.GridSize`** — assumes rectangular grid addressing.
 
