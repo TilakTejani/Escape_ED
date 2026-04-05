@@ -170,3 +170,15 @@ Without this, `EjectSequence` calling `SetPath` each frame re-enables colliders 
 ### World Position from Grid
 
 `CubeGrid.GetWorldPosByIndex` returns `transform.TransformPoint(CalculateWorldPos(...))` — true world space. `CalculateWorldPos` alone returns cube-local space. Always use `GetWorldPosByIndex` when world positions are needed.
+
+### Arrow Transparency System
+
+Arrow alpha is computed **entirely in the shader** (`ArrowPulsing.shader`) using vertex normals — no CPU-side face index, no per-arrow `MaterialPropertyBlock`, no `RegisterArrow`/`UnregisterArrow`.
+
+- Do NOT add back a face-index lookup (`uv2`, `_FaceAlphas0/_FaceAlphas1`) — it was removed because it broke on rotated cubes and failed during ejection.
+- `GhostCubeController` sets `_MinArrowAlpha` as a `Shader.SetGlobalFloat` once per frame. That is the only arrow-related call it makes.
+- Arrow transparency works correctly on any surface shape — the shader only needs vertex normals, which `ArrowMeshBuilder` always provides.
+
+### `arrowEjectMaterial`
+
+`Arrow.Eject()` switches to `arrowEjectMaterial` if assigned in the Inspector. If null, the arrow keeps its default material. Assign a distinct material (glow, dissolve, etc.) to visually differentiate flying arrows from static ones.
