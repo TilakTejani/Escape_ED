@@ -269,14 +269,9 @@ namespace EscapeED
 
         public static void FinalizeMesh(Mesh mesh, Context ctx, bool smoothShading)
         {
-            var uv2s = new Vector2[ctx.meshNormals.Count];
-            for (int vi = 0; vi < ctx.meshNormals.Count; vi++)
-                uv2s[vi] = new Vector2(FaceIndexFromNormal(ctx.meshNormals[vi]), 0f);
-
             mesh.SetVertices(ctx.verts);
             mesh.SetTriangles(ctx.tris, 0);
             mesh.SetUVs(0, ctx.uvs);
-            mesh.uv2 = uv2s;
 
             if (smoothShading) mesh.RecalculateNormals();
             else               mesh.SetNormals(ctx.meshNormals);
@@ -522,14 +517,5 @@ namespace EscapeED
         static Vector3 PrimaryNormal(List<Vector3> faceNormals)
             => faceNormals != null && faceNormals.Count > 0 ? faceNormals[0] : Vector3.up;
 
-        static float FaceIndexFromNormal(Vector3 n)
-        {
-            if (n.y >  0.5f) return 0f;
-            if (n.y < -0.5f) return 1f;
-            if (n.x < -0.5f) return 2f;
-            if (n.x >  0.5f) return 3f;
-            if (n.z >  0.5f) return 4f;
-            return 5f;
-        }
     }
 }

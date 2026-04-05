@@ -21,7 +21,6 @@ namespace EscapeED
         private CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
-        private GhostCubeController   ghostController;
 
         private void Reset()
         {
@@ -131,8 +130,6 @@ namespace EscapeED
             arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(arrowObj);
 
-            if (ghostController != null)
-                ghostController.RegisterArrow(arrowObj.GetComponent<MeshRenderer>());
         }
 
         private void ClearActiveLevel()
@@ -140,7 +137,6 @@ namespace EscapeED
             foreach (var arrow in activeArrows)
                 if (arrow != null) Destroy(arrow);
             activeArrows.Clear();
-            if (ghostController != null) ghostController.ClearArrows();
         }
 
         private void AutoFrameCamera()
@@ -191,7 +187,6 @@ namespace EscapeED
         void Awake()
         {
             navigator       = GetComponent<CubeNavigator>();
-            if (grid != null) ghostController = grid.GetComponent<GhostCubeController>();
         }
 
         void Start()
@@ -239,8 +234,6 @@ namespace EscapeED
             }
             else
             {
-                if (ghostController != null)
-                    ghostController.UnregisterArrow(arrow.GetComponent<MeshRenderer>());
                 arrow.Eject();
                 activeArrows.Remove(arrow.gameObject);
             }
@@ -341,8 +334,6 @@ namespace EscapeED
             arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(obj);
 
-            if (ghostController != null)
-                ghostController.RegisterArrow(obj.GetComponent<MeshRenderer>());
         }
     }
 }
