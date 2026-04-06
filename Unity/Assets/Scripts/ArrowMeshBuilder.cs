@@ -269,6 +269,10 @@ namespace EscapeED
 
         public static void FinalizeMesh(Mesh mesh, Context ctx, bool smoothShading)
         {
+            // Only clear + re-upload triangles when vertex count changes (topology change).
+            // When count is the same, positions update in-place — no GPU Clear needed.
+            if (mesh.vertexCount != ctx.verts.Count)
+                mesh.Clear();
             mesh.SetVertices(ctx.verts);
             mesh.SetTriangles(ctx.tris, 0);
             mesh.SetUVs(0, ctx.uvs);

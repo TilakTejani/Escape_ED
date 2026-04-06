@@ -60,13 +60,30 @@ namespace EscapeED
             int       M       = (n - 1) * S + 1;  // exactly spans (n-1)*gridStep arc-length
             float     subStep = gridStep / S;
 
-            // Pre-build one single-normal list per original dot (avoids per-frame allocation).
-            var (primaryNormalLists, flatNormal) = BuildPrimaryNormalLists(worldNormals, n);
+            // Assign normals per sample from the original dot they map to (j/S), clamped to n-1.
+            // Do NOT use stepsAdvanced — that shifted all srcIdx every gridStep, causing every
+            // group of S samples to abruptly change normal at each boundary (pop every ~6 frames).
+            // Fixed assignment keeps each face-portion of the snake using its face's normal for the
+            // whole animation: no pops, and corner arrows keep the correct normal per face section.
+            var (primaryNormalLists, _) = BuildPrimaryNormalLists(worldNormals, n);
 
             var sampledPos    = new List<Vector3>(M);
             var activeNormals  = new List<List<Vector3>>(M);
             var activeDotTypes = new List<DotType>(M);
-            for (int j = 0; j < M; j++) { activeNormals.Add(null); activeDotTypes.Add(DotType.Face); }
+            for (int j = 0; j < M; j++)
+            {
+                int srcIdx = Mathf.Min(Mathf.FloorToInt(j / (float)S), n - 1);
+                activeNormals.Add(primaryNormalLists[srcIdx]);
+                activeDotTypes.Add(DotType.Face);
+            }
+
+            // Track the total arc length currently held in pathBuffer so we can trim old
+            // front entries that SamplePathBufferAll will never reach.
+            // Maximum arc needed = (M-1)*subStep = (n-1)*gridStep, plus one gridStep safety margin.
+            float bufferedArc = 0f;
+            for (int i = 1; i < pathBuffer.Count; i++)
+                bufferedArc += Vector3.Distance(pathBuffer[i - 1], pathBuffer[i]);
+            float arcNeeded = (M - 1) * subStep + gridStep;
 
             float totalDist = (n + 10) * gridStep;
             float traveled  = 0f;
@@ -76,19 +93,18 @@ namespace EscapeED
                 float step = speed * Time.deltaTime;
                 traveled += step;
                 pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
+                bufferedArc += step;
 
-                SamplePathBufferAll(pathBuffer, M, subStep, sampledPos);
-
-                // srcIdx for sample j = floor(j/S) + stepsAdvanced.
-                // Every S consecutive samples map to the same original dot.
-                int stepsAdvanced = Mathf.FloorToInt(traveled / gridStep);
-                for (int j = 0; j < M; j++)
+                // Trim front entries that are beyond the arc window we'll ever sample.
+                while (pathBuffer.Count > 2)
                 {
-                    int srcIdx = Mathf.FloorToInt(j / (float)S) + stepsAdvanced;
-                    activeNormals[j]  = srcIdx >= n ? flatNormal : primaryNormalLists[srcIdx];
-                    activeDotTypes[j] = DotType.Face;
+                    float frontSeg = Vector3.Distance(pathBuffer[0], pathBuffer[1]);
+                    if (bufferedArc - frontSeg <= arcNeeded) break;
+                    bufferedArc -= frontSeg;
+                    pathBuffer.RemoveAt(0);
                 }
 
+                SamplePathBufferAll(pathBuffer, M, subStep, sampledPos);
                 _owner.SetPath(sampledPos, activeNormals, activeDotTypes);
                 yield return null;
             }
