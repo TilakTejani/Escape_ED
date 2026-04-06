@@ -64,8 +64,6 @@ Shader "EscapeED/ArrowPulsing"
                 float pulse      = 0.5 + 0.5 * sin(_Time.y * _PulseSpeed + input.uv.x * 5.0);
                 float4 finalColor = lerp(_MainColor, _PulseColor, pulse * 0.4);
 
-                // Compute alpha from face normal vs camera direction — rotation-invariant.
-                // Matches GhostCubeController's formula: smooth transition around dot=0.
                 float3 cubeToCam = normalize(_WorldSpaceCameraPos.xyz - input.positionWS);
                 float  d         = dot(normalize(input.normalWS), cubeToCam);
                 float  t         = saturate(d / 0.2 + 1.0);

@@ -122,9 +122,9 @@ The previous approach stored a face index (0–5) in `uv2` per vertex, had the C
 
 **Shape-agnostic:** The shader only uses the vertex normal and camera direction — no knowledge of how many faces the object has. Works correctly for any shape without modification.
 
-**Ejection:** When the arrow detaches from the cube, its mesh normals are world-space captured before detach. The shader computes correct alpha from those normals automatically — no special ejection handling needed.
+**Ejection:** The transparency formula uses frozen world-space cube face normals. As the arrow moves through space those normals no longer align with the camera, causing the arrow to fade. The correct fix is `arrowEjectMaterial` — a duplicate of `ArrowPulseMat` with `_MinArrowAlpha = 1`, assigned on the Arrow prefab. `lerp(1, 1, t) = 1` always — fully opaque regardless of camera angle.
 
-**`arrowEjectMaterial`:** `Arrow.Eject()` switches to this material if assigned in the Inspector. Allows a distinct visual (glow, dissolve, etc.) the moment an arrow starts flying.
+**`arrowEjectMaterial`:** Required for correct ejection rendering. Duplicate `ArrowPulseMat`, set `_MinArrowAlpha = 1`, assign to `arrowEjectMaterial` on the Arrow prefab. Also the hook for a distinct eject visual (glow, dissolve, etc.).
 
 ---
 

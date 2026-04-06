@@ -46,10 +46,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94418072742ca4496a3a6d62496a7607, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Arrow
-  arrowMaterial: {fileID: 0}
+  arrowEjectMaterial: {fileID: 2100000, guid: 0d170543de2d348968ae387899184e19, type: 2}
   lineWidth: 0.08
-  tipLength: 0.16
+  tipLengthMult: 2.5
+  tipWidthMult: 2.5
   surfaceOffset: 0.005
+  smoothShading: 0
 --- !u!33 &1116789332955183900
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -83,7 +85,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 0}
+  - {fileID: 2100000, guid: 497a2da289c584a62a66cf20ae28da6d, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0

@@ -12,7 +12,6 @@ namespace EscapeED
 
         [Header("Prefabs")]
         public GameObject arrowPrefab;
-        public Material   arrowMaterial; // Assign ArrowPulseMat here
 
         [Header("References")]
         public CubeGrid grid;
@@ -125,7 +124,6 @@ namespace EscapeED
                 return;
             }
 
-            if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
             arrow.SetPath(worldPath, allNormals, dotTypes);
             arrow.OnInteractionTriggered += HandleArrowInteraction;
             activeArrows.Add(arrowObj);
@@ -315,9 +313,10 @@ namespace EscapeED
 
         void SpawnArrow(List<Vector3Int> gridPath)
         {
-            GameObject obj   = Instantiate(arrowPrefab, Vector3.zero, Quaternion.identity);
+            GameObject obj   = Instantiate(arrowPrefab, transform);
+            obj.transform.localPosition = Vector3.zero;
+            obj.transform.localRotation = Quaternion.identity;
             Arrow      arrow = obj.GetComponent<Arrow>();
-            if (arrowMaterial != null) arrow.arrowMaterial = arrowMaterial;
 
             var worldPoints = new List<Vector3>();
             var allNormals  = new List<List<Vector3>>();
