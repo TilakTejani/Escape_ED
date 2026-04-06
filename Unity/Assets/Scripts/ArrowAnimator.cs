@@ -56,8 +56,8 @@ namespace EscapeED
             // M = n*S positions at subStep spacing. Each group of S consecutive samples inherits
             // the primary face normal of its original dot — all as Face type so ArrowMeshBuilder
             // draws simple flat quads (no fold caps on intermediate sub-samples).
-            const int S      = 10;
-            int       M      = n * S;
+            const int S       = 10;
+            int       M       = (n - 1) * S + 1;  // exactly spans (n-1)*gridStep arc-length
             float     subStep = gridStep / S;
 
             // Pre-build one single-normal list per original dot (avoids per-frame allocation).
@@ -119,18 +119,21 @@ namespace EscapeED
             for (int i = 0; i < n; i++)
                 worldPositions.Add(_owner.transform.TransformPoint(originalPositions[i]));
 
-            float gridStep = Vector3.Distance(worldPositions[0], worldPositions[1]);
-            float pushDist = gridStep * 0.5f;
-            float speed    = gridStep / 0.08f;
+            Vector3 originalHead = worldPositions[n - 1];
+            Vector3 headDir      = (worldPositions[n - 1] - worldPositions[n - 2]).normalized;
+            float   gridStep     = Vector3.Distance(worldPositions[0], worldPositions[1]);
+            float   pushDist     = gridStep * 0.5f;
+            float   speed        = gridStep / 0.08f;
 
             const int S       = 10;
-            int       M       = n * S;
+            int       M       = (n - 1) * S + 1;
             float     subStep = gridStep / S;
 
-            var pathBuffer = new List<Vector3>(n * 2 + 64);
-            foreach (var wp in worldPositions) pathBuffer.Add(wp);
-
-            Vector3 headDir = (pathBuffer[pathBuffer.Count - 1] - pathBuffer[pathBuffer.Count - 2]).normalized;
+            // Fixed buffer: original n points + one virtual head slot.
+            // Moving only the head slot avoids a V-shape in the buffer (no stretch/tear).
+            var animBuffer = new List<Vector3>(n + 1);
+            foreach (var wp in worldPositions) animBuffer.Add(wp);
+            animBuffer.Add(originalHead); // virtual head slot (index n)
 
             var (primaryNormalLists, flatNormal) = BuildPrimaryNormalLists(originalNormals, n);
 
@@ -138,35 +141,32 @@ namespace EscapeED
             var activeNormals  = new List<List<Vector3>>(M);
             var activeDotTypes = new List<DotType>(M);
             for (int j = 0; j < M; j++) { activeNormals.Add(null); activeDotTypes.Add(DotType.Face); }
-
-            // Fixed normal mapping — shake movement is too small to shift dot assignments.
             for (int j = 0; j < M; j++)
             {
-                int srcIdx = Mathf.FloorToInt(j / (float)S);
+                int srcIdx        = Mathf.FloorToInt(j / (float)S);
                 activeNormals[j]  = srcIdx >= n ? flatNormal : primaryNormalLists[srcIdx];
                 activeDotTypes[j] = DotType.Face;
             }
 
-            // Push
-            float traveled = 0f;
-            while (traveled < pushDist)
+            // Push — slide virtual head forward along headDir
+            float headOffset = 0f;
+            while (headOffset < pushDist)
             {
-                float step = Mathf.Min(speed * Time.deltaTime, pushDist - traveled);
-                traveled += step;
-                pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] + headDir * step);
-                SamplePathBufferAll(pathBuffer, M, subStep, sampledPos);
+                float step = Mathf.Min(speed * Time.deltaTime, pushDist - headOffset);
+                headOffset += step;
+                animBuffer[n] = originalHead + headDir * headOffset;
+                SamplePathBufferAll(animBuffer, M, subStep, sampledPos);
                 _owner.SetPath(sampledPos, activeNormals, activeDotTypes);
                 yield return null;
             }
 
-            // Pull
-            traveled = 0f;
-            while (traveled < pushDist)
+            // Pull — slide virtual head back to original position
+            while (headOffset > 0f)
             {
-                float step = Mathf.Min(speed * Time.deltaTime, pushDist - traveled);
-                traveled += step;
-                pathBuffer.Add(pathBuffer[pathBuffer.Count - 1] - headDir * step);
-                SamplePathBufferAll(pathBuffer, M, subStep, sampledPos);
+                float step = Mathf.Min(speed * Time.deltaTime, headOffset);
+                headOffset -= step;
+                animBuffer[n] = originalHead + headDir * headOffset;
+                SamplePathBufferAll(animBuffer, M, subStep, sampledPos);
                 _owner.SetPath(sampledPos, activeNormals, activeDotTypes);
                 yield return null;
             }
