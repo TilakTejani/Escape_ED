@@ -9,8 +9,7 @@ namespace EscapeED
     public class Arrow : MonoBehaviour, IInteractable
     {
         [Header("Visuals")]
-        public Material arrowMaterial;       
-        public Material arrowEjectMaterial;  
+        public Material arrowEjectMaterial;
 
         [Header("Shape")]
         public float lineWidth      = ArrowConstants.DEFAULT_LINE_WIDTH;
@@ -65,7 +64,6 @@ namespace EscapeED
             int arrowLayer = LayerMask.NameToLayer(ArrowConstants.LAYER_ARROW);
             if (arrowLayer != -1) gameObject.layer = arrowLayer;
 
-            if (arrowMaterial != null) mr.material = arrowMaterial;
         }
 
         public void SetPath(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes, bool useWorldSpace = true)
@@ -117,7 +115,6 @@ namespace EscapeED
                 mf.sharedMesh.MarkDynamic();
             }
             mf.sharedMesh.Clear();
-            if (arrowMaterial != null && !isEjecting) mr.material = arrowMaterial;
 
             int n = positions.Count;
             float tLen = lineWidth * tipLengthMult;

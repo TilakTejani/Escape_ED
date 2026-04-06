@@ -40,18 +40,18 @@ namespace EscapeED.Editor
                     if (prefabGuids.Length > 0) manager.arrowPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(prefabGuids[0]));
                 }
                 
-                // Auto-assign ArrowPulseMat to arrowPrefab's Arrow component
+                // Auto-assign ArrowPulseMat directly to the MeshRenderer on the prefab
                 if (manager.arrowPrefab != null)
                 {
-                    Arrow arrowScript = manager.arrowPrefab.GetComponent<Arrow>();
-                    if (arrowScript != null && arrowScript.arrowMaterial == null)
+                    MeshRenderer mr = manager.arrowPrefab.GetComponent<MeshRenderer>();
+                    if (mr != null && mr.sharedMaterial == null)
                     {
                         Material pulseMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/ArrowPulseMat.mat");
                         if (pulseMat != null)
                         {
-                            arrowScript.arrowMaterial = pulseMat;
+                            mr.sharedMaterial = pulseMat;
                             EditorUtility.SetDirty(manager.arrowPrefab);
-                            Debug.Log("✅ Assigned ArrowPulseMat to ArrowContainer prefab.");
+                            Debug.Log("✅ Assigned ArrowPulseMat to ArrowContainer MeshRenderer.");
                         }
                     }
                 }

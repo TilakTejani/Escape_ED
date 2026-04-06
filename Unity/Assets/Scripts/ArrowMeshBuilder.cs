@@ -75,7 +75,7 @@ namespace EscapeED
         public static void BuildBody(Context ctx)
         {
             float halfW = ctx.lineWidth * 0.5f;
-            Vector3 preTipDir = (ctx.positions[ctx.n - 1] - ctx.positions[ctx.n - 2]).normalized;
+            Vector3 preTipDir = (ctx.localPos[ctx.n - 1] - ctx.localPos[ctx.n - 2]).normalized;
 
             for (int i = 0; i < ctx.n - 1; i++)
             {

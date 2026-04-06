@@ -179,6 +179,17 @@ Arrow alpha is computed **entirely in the shader** (`ArrowPulsing.shader`) using
 - `GhostCubeController` sets `_MinArrowAlpha` as a `Shader.SetGlobalFloat` once per frame. That is the only arrow-related call it makes.
 - Arrow transparency works correctly on any surface shape — the shader only needs vertex normals, which `ArrowMeshBuilder` always provides.
 
-### `arrowEjectMaterial`
+### Arrow Material — Prefab Owns It
 
-`Arrow.Eject()` switches to `arrowEjectMaterial` if assigned in the Inspector. If null, the arrow keeps its default material. Assign a distinct material (glow, dissolve, etc.) to visually differentiate flying arrows from static ones.
+`arrowMaterial` was removed from `Arrow.cs` and `LevelManager.cs`. The material is now set directly on the Arrow prefab's `MeshRenderer` in the Inspector — the standard Unity pattern. Do NOT re-add `arrowMaterial` as a field or inject it post-instantiation from `LevelManager`.
+
+`MaterialFixer.cs` auto-assigns `ArrowPulseMat` to the prefab's `MeshRenderer.sharedMaterial` if missing.
+
+### `arrowEjectMaterial` — Required for Correct Ejection Rendering
+
+`Arrow.Eject()` switches to `arrowEjectMaterial` if assigned. This is **not optional** — without it, the arrow uses `ArrowPulseMat` whose transparency formula fades based on frozen cube face normals. As the arrow moves through space the normals no longer align with the camera, causing the arrow to go transparent mid-flight.
+
+**Standard setup:** Duplicate `ArrowPulseMat` → name it `ArrowEjectMat` → set `_MinArrowAlpha = 1` → assign to `arrowEjectMaterial` on the Arrow prefab. `_MinArrowAlpha = 1` makes `lerp(1, 1, t) = 1` always — fully opaque regardless of camera angle.
+
+Do NOT add a shader flag (`_Ejecting`, etc.) as a fallback — that is non-standard. Two material assets is the correct Unity pattern.
+
