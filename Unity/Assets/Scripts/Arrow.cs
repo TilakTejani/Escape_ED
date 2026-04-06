@@ -109,12 +109,11 @@ namespace EscapeED
 
         private ArrowMeshBuilder.Context CreateBuildContext(List<Vector3> positions, List<List<Vector3>> allNormals, List<DotType> dotTypes, bool useWorldSpace)
         {
-            if (mf.sharedMesh == null) 
+            if (mf.sharedMesh == null)
             {
                 mf.sharedMesh = new Mesh { name = "Arrow_" + name };
                 mf.sharedMesh.MarkDynamic();
             }
-            mf.sharedMesh.Clear();
 
             int n = positions.Count;
             float tLen = lineWidth * tipLengthMult;
