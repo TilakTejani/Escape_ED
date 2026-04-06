@@ -54,6 +54,11 @@ namespace EscapeED
             var pathBuffer = new List<Vector3>(n * 2);
             foreach (var wp in worldPositions) pathBuffer.Add(wp);
 
+            // Prepend a ghost point one gridStep behind the tail so the sampler has full arc on
+            // frame 0 — prevents tail dots bunching at buffer[0] for the first ~100ms.
+            Vector3 tailDir = (worldPositions[1] - worldPositions[0]).normalized;
+            pathBuffer.Insert(0, worldPositions[0] - tailDir * gridStep);
+
             Vector3 headDir = (pathBuffer[pathBuffer.Count - 1] - pathBuffer[pathBuffer.Count - 2]).normalized;
             float speed = gridStep / 0.10f;
 
@@ -90,7 +95,7 @@ namespace EscapeED
                 bufferedArc += Vector3.Distance(pathBuffer[i - 1], pathBuffer[i]);
             float arcNeeded = (M - 1) * subStep + gridStep;
 
-            float totalDist = (n + 10) * gridStep;
+            float totalDist = (n + 4) * gridStep;
             float traveled  = 0f;
 
             while (traveled < totalDist)
@@ -113,6 +118,22 @@ namespace EscapeED
                 _owner.SetPath(sampledPos, activeNormals, activeDotTypes);
                 yield return null;
             }
+
+            // Rebuild as a straight n-point arrow at the current head position so the finale
+            // shows a proper arrowhead instead of the sub-sampled flat ribbon.
+            // finalePath is n evenly-spaced points ending at the current buffer head.
+            Vector3 finaleHead = pathBuffer[pathBuffer.Count - 1];
+            var finalePath  = new List<Vector3>(n);
+            var finNormals  = new List<List<Vector3>>(n);
+            var finTypes    = new List<DotType>(n);
+            var exitNorm    = new List<Vector3> { worldNormals[n - 1].Count > 0 ? worldNormals[n - 1][0] : Vector3.up };
+            for (int i = 0; i < n; i++)
+            {
+                finalePath.Add(finaleHead - headDir * (n - 1 - i) * gridStep);
+                finNormals.Add(exitNorm);
+                finTypes.Add(DotType.Face);
+            }
+            _owner.SetPath(finalePath, finNormals, finTypes);
 
             // Finale: launch speedup
             float speed2 = speed;
