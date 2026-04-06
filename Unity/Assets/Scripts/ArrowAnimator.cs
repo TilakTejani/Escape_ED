@@ -60,7 +60,7 @@ namespace EscapeED
             pathBuffer.Insert(0, worldPositions[0] - tailDir * gridStep);
 
             Vector3 headDir = (pathBuffer[pathBuffer.Count - 1] - pathBuffer[pathBuffer.Count - 2]).normalized;
-            float speed = gridStep / 0.10f;
+            float speed = gridStep / ArrowConstants.EJECT_STEP_TIME;
 
             // 4. ANIMATION DATA: Sub-sample the path at 10x density for flexible snake-like movement.
             // M = n*S positions at subStep spacing. Each group of S consecutive samples inherits
@@ -138,10 +138,10 @@ namespace EscapeED
             // Finale: launch speedup
             float speed2 = speed;
             float elapsed = 0f;
-            while (elapsed < 1.5f)
+            while (elapsed < ArrowConstants.EJECT_FINAL_DURATION)
             {
                 elapsed += Time.deltaTime;
-                speed2 += 1.2f * Time.deltaTime;
+                speed2 += ArrowConstants.EJECT_LAUNCH_ACCEL * Time.deltaTime;
                 _owner.transform.position += headDir * speed2 * Time.deltaTime;
                 yield return null;
             }
@@ -164,8 +164,8 @@ namespace EscapeED
             Vector3 originalHead = worldPositions[n - 1];
             Vector3 headDir      = (worldPositions[n - 1] - worldPositions[n - 2]).normalized;
             float   gridStep     = Vector3.Distance(worldPositions[0], worldPositions[1]);
-            float   pushDist     = gridStep * 0.5f;
-            float   speed        = gridStep / 0.08f;
+            float   pushDist     = gridStep * ArrowConstants.SHAKE_PUSH_DIST_MULT;
+            float   speed        = gridStep / ArrowConstants.SHAKE_STEP_TIME;
 
             const int S       = 10;
             int       M       = (n - 1) * S + 1;
