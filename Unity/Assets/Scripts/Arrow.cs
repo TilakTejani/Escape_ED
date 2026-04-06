@@ -29,14 +29,14 @@ namespace EscapeED
         private ArrowAnimator       _animator;
 
         // Buffers (Reference-passed to Builder to avoid allocations)
-        private readonly List<Vector3> _verts        = new List<Vector3>(512);
-        private readonly List<int>     _tris         = new List<int>(1024);
-        private readonly List<Vector2> _uvs          = new List<Vector2>(512);
-        private readonly List<Vector3> _meshNormals  = new List<Vector3>(512);
-        private List<Vector3>          _tipVerts     = new List<Vector3>(8);
-        private readonly List<Vector3> _localScratch = new List<Vector3>(64);
-        // Reused every frame in CreateBuildContext — avoids per-frame List allocation
-        private readonly List<Vector3> _ctxLocalPos  = new List<Vector3>(64);
+        private readonly List<Vector3> _verts       = new List<Vector3>(512);
+        private readonly List<int>     _tris        = new List<int>(1024);
+        private readonly List<Vector2> _uvs         = new List<Vector2>(512);
+        private readonly List<Vector3> _meshNormals = new List<Vector3>(512);
+        private List<Vector3>          _tipVerts    = new List<Vector3>(8);
+        private readonly List<Vector3> _localScratch  = new List<Vector3>(64);
+        private readonly List<Vector3> _localPosBuf   = new List<Vector3>(64);
+        private float[]                _distBuf        = new float[64];
 
         // State Snapshot — written only in SetPath when !isEjecting && !isAnimating. Never mutate in-place.
         private List<Vector3>       originalPositions;
@@ -121,25 +121,24 @@ namespace EscapeED
             float tLen = lineWidth * tipLengthMult;
             float tHalfWid = (lineWidth * tipWidthMult) * 0.5f;
 
-            _ctxLocalPos.Clear();
+            _localPosBuf.Clear();
             for (int i = 0; i < n; i++)
             {
                 if (useWorldSpace)
-                    _ctxLocalPos.Add(transform.InverseTransformPoint(positions[i]));
+                    _localPosBuf.Add(transform.InverseTransformPoint(positions[i]));
                 else
-                    _ctxLocalPos.Add(positions[i]);
+                    _localPosBuf.Add(positions[i]);
             }
-            var localPos = _ctxLocalPos;
 
-            float[] dist = new float[n];
-            dist[0] = 0f;
+            if (_distBuf.Length < n) _distBuf = new float[n];
+            _distBuf[0] = 0f;
             for (int i = 1; i < n; i++)
-                dist[i] = dist[i - 1] + Vector3.Distance(localPos[i - 1], localPos[i]);
-            float totalDist = dist[n - 1] + (dotTypes[n-1] == DotType.Face ? tLen : 0);
+                _distBuf[i] = _distBuf[i - 1] + Vector3.Distance(_localPosBuf[i - 1], _localPosBuf[i]);
+            float totalDist = _distBuf[n - 1] + (dotTypes[n-1] == DotType.Face ? tLen : 0);
 
             _verts.Clear(); _tris.Clear(); _uvs.Clear(); _meshNormals.Clear();
 
-            Vector3 preTipDir = (localPos[n - 1] - localPos[n - 2]).normalized;
+            Vector3 preTipDir = (_localPosBuf[n - 1] - _localPosBuf[n - 2]).normalized;
             Vector3 lastValid = preTipDir.sqrMagnitude > ArrowConstants.EPS ? preTipDir : Vector3.forward;
 
             return new ArrowMeshBuilder.Context
@@ -151,8 +150,8 @@ namespace EscapeED
                 surfaceOffset = surfaceOffset,
                 tipLength     = tLen,
                 tipHalfWidth  = tHalfWid,
-                localPos      = localPos,
-                dist          = dist,
+                localPos      = _localPosBuf,
+                dist          = _distBuf,
                 totalDist     = totalDist,
                 verts         = _verts,
                 tris          = _tris,

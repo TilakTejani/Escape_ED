@@ -38,9 +38,13 @@ namespace EscapeED
                 worldNormals.Add(worldInner);
             }
 
+            // gridStep derived from world positions — correct regardless of cube scale.
+            float gridStep = worldPositions.Count >= 2
+                ? Vector3.Distance(worldPositions[0], worldPositions[1])
+                : 0.28f;
+
             // 2. DETACH: Now safe to break the transform chain.
-            // worldPositionStays=true keeps the arrow at its correct world position
-            // regardless of its localPosition under the cube.
+            // worldPositionStays=true preserves the arrow's world transform — safe for any cube position/rotation.
             _owner.transform.SetParent(null, true);
             _owner.gameObject.layer = LayerMask.NameToLayer(ArrowConstants.LAYER_EJECTING_ARROW);
 
@@ -49,12 +53,6 @@ namespace EscapeED
             // snake-like appearance without rounding the bends.
             var pathBuffer = new List<Vector3>(n * 2);
             foreach (var wp in worldPositions) pathBuffer.Add(wp);
-
-            // Compute gridStep from world positions (not local) so speed is correct
-            // regardless of cube scale.
-            float gridStep = worldPositions.Count >= 2
-                ? Vector3.Distance(worldPositions[0], worldPositions[1])
-                : 0.28f;
 
             Vector3 headDir = (pathBuffer[pathBuffer.Count - 1] - pathBuffer[pathBuffer.Count - 2]).normalized;
             float speed = gridStep / 0.10f;
@@ -112,10 +110,7 @@ namespace EscapeED
                 }
 
                 SamplePathBufferAll(pathBuffer, M, subStep, sampledPos);
-                // useWorldSpace:false — after detach the arrow transform is identity in world space,
-                // so sampled world positions are already in the arrow's local space. Skip InverseTransformPoint
-                // and avoid allocating a new localPos list each frame.
-                _owner.SetPath(sampledPos, activeNormals, activeDotTypes, useWorldSpace: false);
+                _owner.SetPath(sampledPos, activeNormals, activeDotTypes);
                 yield return null;
             }
 
