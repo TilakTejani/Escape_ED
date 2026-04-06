@@ -29,12 +29,14 @@ namespace EscapeED
         private ArrowAnimator       _animator;
 
         // Buffers (Reference-passed to Builder to avoid allocations)
-        private readonly List<Vector3> _verts       = new List<Vector3>(512);
-        private readonly List<int>     _tris        = new List<int>(1024);
-        private readonly List<Vector2> _uvs         = new List<Vector2>(512);
-        private readonly List<Vector3> _meshNormals = new List<Vector3>(512);
-        private List<Vector3>          _tipVerts    = new List<Vector3>(8);
+        private readonly List<Vector3> _verts        = new List<Vector3>(512);
+        private readonly List<int>     _tris         = new List<int>(1024);
+        private readonly List<Vector2> _uvs          = new List<Vector2>(512);
+        private readonly List<Vector3> _meshNormals  = new List<Vector3>(512);
+        private List<Vector3>          _tipVerts     = new List<Vector3>(8);
         private readonly List<Vector3> _localScratch = new List<Vector3>(64);
+        // Reused every frame in CreateBuildContext — avoids per-frame List allocation
+        private readonly List<Vector3> _ctxLocalPos  = new List<Vector3>(64);
 
         // State Snapshot — written only in SetPath when !isEjecting && !isAnimating. Never mutate in-place.
         private List<Vector3>       originalPositions;
@@ -119,14 +121,15 @@ namespace EscapeED
             float tLen = lineWidth * tipLengthMult;
             float tHalfWid = (lineWidth * tipWidthMult) * 0.5f;
 
-            var localPos = new List<Vector3>(n);
+            _ctxLocalPos.Clear();
             for (int i = 0; i < n; i++)
             {
                 if (useWorldSpace)
-                    localPos.Add(transform.InverseTransformPoint(positions[i]));
+                    _ctxLocalPos.Add(transform.InverseTransformPoint(positions[i]));
                 else
-                    localPos.Add(positions[i]);
+                    _ctxLocalPos.Add(positions[i]);
             }
+            var localPos = _ctxLocalPos;
 
             float[] dist = new float[n];
             dist[0] = 0f;
@@ -168,8 +171,7 @@ namespace EscapeED
             isEjecting = true;
             _physics.DisableAllColliders();
             if (arrowEjectMaterial != null) mr.material = arrowEjectMaterial;
-            float gridStep = (originalPositions.Count >= 2) ? Vector3.Distance(originalPositions[0], originalPositions[1]) : 0.28f;
-            StartCoroutine(_animator.EjectSequence(originalPositions, originalNormals, originalDotTypes, gridStep));
+            StartCoroutine(_animator.EjectSequence(originalPositions, originalNormals, originalDotTypes));
         }
 
         public void PlayBlockedAnimation()
