@@ -63,10 +63,12 @@ namespace EscapeED
             int       M       = (n - 1) * S + 1;  // exactly spans (n-1)*gridStep arc-length
             float     subStep = gridStep / S;
 
-            // Use the exit face normal for all snake segments.
-            // Per-section normals drift as positions slide (sample j eventually represents a different
-            // face than originalNormals[j/S] describes), causing visible misalignment on multi-face arrows.
-            // A single exit normal keeps the ribbon flat and consistent throughout the animation.
+            // Use exit face normal for all snake segments.
+            // Per-section normals cause perpendicular segments when face boundary slides through
+            // the snake: adjacent samples get Cross(up,dir) vs Cross(right,dir) as their right
+            // vectors, which are 90° apart — quads visually pop perpendicular to each other.
+            // One consistent normal eliminates this entirely. Tail may sit slightly off its original
+            // face plane on multi-face arrows, but that is far less visible than perpendicular quads.
             var exitNormal     = new List<Vector3> { originalNormals[n - 1].Count > 0 ? originalNormals[n - 1][0] : Vector3.up };
             var sampledPos     = new List<Vector3>(M);
             var activeNormals  = new List<List<Vector3>>(M);
