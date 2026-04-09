@@ -37,16 +37,41 @@ namespace EscapeED
         private float lastPinchDistance;
         private bool  wasPinchingLastFrame;
 
+        // Runtime assignment (for dynamic rebuilds)
+        private InputAction runtimeRotation;
+        private InputAction runtimePress;
+        private InputAction runtimeZoom;
+
+        /// <summary>
+        /// Call at runtime to manually link actions (essential for dynamic setups)
+        /// </summary>
+        public void InitializeRuntimeActions(InputAction rotation, InputAction press, InputAction zoom)
+        {
+            runtimeRotation = rotation;
+            runtimePress    = press;
+            runtimeZoom     = zoom;
+            
+            if (gameObject.activeInHierarchy)
+            {
+                OnDisable();
+                OnEnable();
+            }
+        }
+
         private void OnEnable()
         {
-            if (pressAction != null)
+            var press   = runtimePress    ?? (pressAction    != null ? pressAction.action    : null);
+            var rotate  = runtimeRotation ?? (rotationAction != null ? rotationAction.action : null);
+            var zoom    = runtimeZoom     ?? (zoomAction     != null ? zoomAction.action     : null);
+
+            if (press != null)
             {
-                pressAction.action.started  += OnPressStarted;
-                pressAction.action.canceled += OnPressEnded;
-                pressAction.action.Enable();
+                press.started  += OnPressStarted;
+                press.canceled += OnPressEnded;
+                press.Enable();
             }
-            if (rotationAction != null) rotationAction.action.Enable();
-            if (zoomAction != null)     zoomAction.action.Enable();
+            if (rotate != null) rotate.Enable();
+            if (zoom != null)   zoom.Enable();
 
             mainCamTransform = Camera.main.transform;
             currentDistance  = Vector3.Distance(mainCamTransform.position, transform.position);
@@ -55,15 +80,17 @@ namespace EscapeED
 
         private void OnDisable()
         {
-            if (pressAction != null)
+            var press = runtimePress ?? (pressAction != null ? pressAction.action : null);
+            if (press != null)
             {
-                pressAction.action.started  -= OnPressStarted;
-                pressAction.action.canceled -= OnPressEnded;
+                press.started  -= OnPressStarted;
+                press.canceled -= OnPressEnded;
             }
         }
 
         private void OnPressStarted(InputAction.CallbackContext context) => isDragging = true;
         private void OnPressEnded(InputAction.CallbackContext context)   => isDragging = false;
+
 
         void Update()
         {
