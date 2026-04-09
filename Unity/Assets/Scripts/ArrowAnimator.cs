@@ -23,20 +23,13 @@ namespace EscapeED
         {
             int n = originalPositions.Count;
 
-            // 1. CAPTURE & CONVERT: Freeze the current world-space state BEFORE detaching.
-            // This captures the cube's exact rotation into the arrow's world-space data.
+            // 1. CAPTURE: Freeze world positions BEFORE detaching.
+            // Normals stay in local space — after detach the arrow's transform retains the cube's
+            // rotation, so TransformObjectToWorldNormal in the shader converts them correctly.
+            // Converting to world here would cause a double-transform: once here, once in the shader.
             var worldPositions = new List<Vector3>(n);
-            var worldNormals   = new List<List<Vector3>>(n);
             foreach (var p in originalPositions)
                 worldPositions.Add(_owner.transform.TransformPoint(p));
-
-            foreach (var list in originalNormals)
-            {
-                var worldInner = new List<Vector3>(list.Count);
-                foreach (var norm in list)
-                    worldInner.Add(_owner.transform.TransformDirection(norm));
-                worldNormals.Add(worldInner);
-            }
 
             // gridStep derived from world positions — correct regardless of cube scale.
             float gridStep = worldPositions.Count >= 2
@@ -70,20 +63,17 @@ namespace EscapeED
             int       M       = (n - 1) * S + 1;  // exactly spans (n-1)*gridStep arc-length
             float     subStep = gridStep / S;
 
-            // Assign normals per sample from the original dot they map to (j/S), clamped to n-1.
-            // Do NOT use stepsAdvanced — that shifted all srcIdx every gridStep, causing every
-            // group of S samples to abruptly change normal at each boundary (pop every ~6 frames).
-            // Fixed assignment keeps each face-portion of the snake using its face's normal for the
-            // whole animation: no pops, and corner arrows keep the correct normal per face section.
-            var (primaryNormalLists, _) = BuildPrimaryNormalLists(worldNormals, n);
-
-            var sampledPos    = new List<Vector3>(M);
+            // Use the exit face normal for all snake segments.
+            // Per-section normals drift as positions slide (sample j eventually represents a different
+            // face than originalNormals[j/S] describes), causing visible misalignment on multi-face arrows.
+            // A single exit normal keeps the ribbon flat and consistent throughout the animation.
+            var exitNormal     = new List<Vector3> { originalNormals[n - 1].Count > 0 ? originalNormals[n - 1][0] : Vector3.up };
+            var sampledPos     = new List<Vector3>(M);
             var activeNormals  = new List<List<Vector3>>(M);
             var activeDotTypes = new List<DotType>(M);
             for (int j = 0; j < M; j++)
             {
-                int srcIdx = Mathf.Min(Mathf.FloorToInt(j / (float)S), n - 1);
-                activeNormals.Add(primaryNormalLists[srcIdx]);
+                activeNormals.Add(exitNormal);
                 activeDotTypes.Add(DotType.Face);
             }
 
@@ -126,11 +116,10 @@ namespace EscapeED
             var finalePath  = new List<Vector3>(n);
             var finNormals  = new List<List<Vector3>>(n);
             var finTypes    = new List<DotType>(n);
-            var exitNorm    = new List<Vector3> { worldNormals[n - 1].Count > 0 ? worldNormals[n - 1][0] : Vector3.up };
             for (int i = 0; i < n; i++)
             {
                 finalePath.Add(finaleHead - headDir * (n - 1 - i) * gridStep);
-                finNormals.Add(exitNorm);
+                finNormals.Add(exitNormal);
                 finTypes.Add(DotType.Face);
             }
             _owner.SetPath(finalePath, finNormals, finTypes);
