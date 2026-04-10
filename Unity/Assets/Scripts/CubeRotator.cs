@@ -102,9 +102,10 @@ namespace EscapeED
 
         private void HandleRotationInput()
         {
-            if (isDragging && rotationAction != null)
+            var rotate = runtimeRotation ?? (rotationAction != null ? rotationAction.action : null);
+            if (isDragging && rotate != null)
             {
-                Vector2 delta = rotationAction.action.ReadValue<Vector2>();
+                Vector2 delta = rotate.ReadValue<Vector2>();
                 rotationVelocity = Vector2.Lerp(rotationVelocity, delta * (rotationSpeed * 0.05f), Time.deltaTime * rotationSmooth);
             }
             else
@@ -116,9 +117,10 @@ namespace EscapeED
         private void HandleZoomInput()
         {
             // 1. Desktop Scroll Zoom
-            if (zoomAction != null)
+            var zoom = runtimeZoom ?? (zoomAction != null ? zoomAction.action : null);
+            if (zoom != null)
             {
-                float scroll = zoomAction.action.ReadValue<float>();
+                float scroll = zoom.ReadValue<float>();
                 if (Mathf.Abs(scroll) > 0.01f)
                 {
                     targetDistance -= scroll * zoomSpeed * 0.01f;
