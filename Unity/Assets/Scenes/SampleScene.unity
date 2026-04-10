@@ -1945,13 +1945,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4e176a8aa53a84f3299fd5af1acfb6f9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::LevelManager
-  levelJsonFile: {fileID: 4900000, guid: 85944f64eb0654c6481b2929a792194b, type: 3}
+  levelJsonFile: {fileID: 4900000, guid: 922a9ffb8d0d143ba88d36a75cc3c316, type: 3}
+  levelIndex: 0
   arrowPrefab: {fileID: 7300437387262238927, guid: dc8cfa08944bb40e39d2b41857bab977, type: 3}
   grid: {fileID: 1787336636}
   forceWhiteBackground: 1
   arrowLayer:
     serializedVersion: 2
     m_Bits: 0
+  navigator: {fileID: 0}
 --- !u!114 &1787336639
 MonoBehaviour:
   m_ObjectHideFlags: 0

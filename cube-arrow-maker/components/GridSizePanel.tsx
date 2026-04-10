@@ -5,7 +5,7 @@ import { useLevelStore } from '@/store/levelStore'
 import { GridSize, Difficulty } from '@/types'
 
 const MIN = 2
-const MAX = 10
+const MAX = 30
 
 export default function GridSizePanel() {
   const { arrows, gridSize, setGridSize, generateArrows, straightness, setStraightness, geometry, mode, removedInTest, resetTest, tapFirstRemovable } = useLevelStore()
