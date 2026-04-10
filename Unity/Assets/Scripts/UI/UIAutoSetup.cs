@@ -327,50 +327,184 @@ namespace EscapeED.EditorHelper
             GameObject adsObj = CreateIconButton(parent, "AdsBtn", "UI/ads_icon", new Vector2(-420, 500));
             view.adsButton = adsObj.GetComponent<Button>();
 
-            // 2. CENTER CONTENT
+            // 2. CENTER CONTENT - MODERN GLOSSY BUTTON UPGRADE
             CreateText(parent, "Arrows\nCube Escape", 85, new Color(0.2f, 0.2f, 0.2f, 1f), new Vector2(0, 150)).GetComponent<Text>().fontStyle = FontStyle.Bold;
             
             GameObject levelObj = CreateText(parent, "Level 12", 45, new Color(0f, 0.3f, 1f, 1f), new Vector2(0, -20));
             view.levelText = levelObj.GetComponent<Text>();
             view.levelText.fontStyle = FontStyle.Bold;
 
-            GameObject playBtnObj = CreateButton(parent, "PlayButton", "Play", new Vector2(0, -400));
+            // RECONSTRUCT PLAY BUTTON HIERARCHY FOR SOFT SHADOWS
+            GameObject playBtnObj = new GameObject("PlayButton", typeof(RectTransform), typeof(CanvasRenderer), typeof(Button));
+            playBtnObj.layer = 5;
+            playBtnObj.transform.SetParent(parent, false);
+            var playRect = playBtnObj.GetComponent<RectTransform>();
+            playRect.sizeDelta = new Vector2(480, 160);
+            playRect.anchoredPosition = new Vector2(0, -400);
             view.playButton = playBtnObj.GetComponent<Button>();
-            // Update Play button visuals to match SS (Light Blue Pill)
-            playBtnObj.GetComponent<RectTransform>().sizeDelta = new Vector2(400, 120);
-            var playImg = playBtnObj.GetComponent<Image>();
-            playImg.sprite = GetRoundedRectSprite(); 
-            playImg.color = new Color(0.31f, 0.76f, 0.97f, 1f); // Sky Blue #4FC3F7
-            
-            Text playTxt = playBtnObj.GetComponentInChildren<Text>();
-            playTxt.fontSize = 55;
-            playTxt.fontStyle = FontStyle.Bold;
 
-            // 3. BOTTOM NAVIGATION BAR
+            // Layer 1: Soft Dynamic Shadow
+            GameObject shadowObj = new GameObject("ShadowLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            shadowObj.transform.SetParent(playBtnObj.transform, false);
+            var shadowRect = shadowObj.GetComponent<RectTransform>();
+            shadowRect.anchorMin = Vector2.zero; shadowRect.anchorMax = Vector2.one;
+            shadowRect.sizeDelta = new Vector2(60, 60); // Padding for blur
+            shadowRect.anchoredPosition = new Vector2(0, -12); // Modern offset
+            var shadowImg = shadowObj.GetComponent<Image>();
+            shadowImg.sprite = GetSoftShadowSprite(40, 25);
+            shadowImg.type = Image.Type.Sliced;
+            shadowImg.color = new Color(0, 0, 0, 0.4f);
+
+            // Layer 2: Glossy Face
+            GameObject faceObj = new GameObject("FaceLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            faceObj.transform.SetParent(playBtnObj.transform, false);
+            var faceRect = faceObj.GetComponent<RectTransform>();
+            faceRect.anchorMin = Vector2.zero; faceRect.anchorMax = Vector2.one;
+            faceRect.sizeDelta = Vector2.zero;
+            var faceImg = faceObj.GetComponent<Image>();
+            // HEX: Top #4DB8E8, Bottom #5DDDFF
+            faceImg.sprite = GetGlossyButtonSprite(new Color(0.30f, 0.72f, 0.91f), new Color(0.36f, 0.87f, 1.00f));
+            faceImg.type = Image.Type.Sliced;
+            
+            view.playButton.targetGraphic = faceImg;
+
+            // Layer 3: Text
+            GameObject playTxtObj = CreateText(playBtnObj.transform, "Play", 70, Color.white, Vector2.zero);
+            Text playTxt = playTxtObj.GetComponent<Text>();
+            playTxt.fontStyle = FontStyle.Bold;
+            var txtShadow = playTxt.gameObject.AddComponent<Shadow>();
+            txtShadow.effectColor = new Color(0, 0, 0, 0.2f);
+            txtShadow.effectDistance = new Vector2(2, -2);
+
+            // 3. BOTTOM NAVIGATION BAR - PREMIUM 3D NAVIGATION REBUILD
             GameObject navBar = CreatePanel(parent, "BottomNav", Color.white);
             RectTransform navRect = navBar.GetComponent<RectTransform>();
             navRect.anchorMin = new Vector2(0, 0);
-            navRect.anchorMax = new Vector2(1, 0.2f); // Bottom 20%
+            navRect.anchorMax = new Vector2(1, 0.22f); 
             navRect.offsetMin = Vector2.zero;
             navRect.offsetMax = Vector2.zero;
 
-            // Nav Highlight for Home
-            GameObject highlight = new GameObject("HomeHighlight", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            highlight.transform.SetParent(navBar.transform, false);
-            var highRect = highlight.GetComponent<RectTransform>();
-            highRect.sizeDelta = new Vector2(180, 100);
-            highRect.anchoredPosition = new Vector2(0, 40);
+            // COLOR PALETTE
+            Color homeTop = new Color(0.83f, 0.77f, 0.98f); // #D4C5F9
+            Color homeBottom = new Color(0.91f, 0.88f, 1f); // #E8E0FF
+            Color homeAccent = new Color(0.29f, 0.25f, 0.48f); // #4A3F7A (Dark Purple)
             
-            var highImg = highlight.GetComponent<Image>();
-            highImg.sprite = GetRoundedRectSprite();
-            highImg.color = new Color(0.91f, 0.92f, 0.96f, 1f); // #E8EAF6
+            Color lockTop = new Color(0.24f, 0.31f, 0.56f); // #3D4F8F
+            Color lockBottom = new Color(0.29f, 0.37f, 0.63f); // #4A5FA0
 
-            // Nav Icons
-            view.shopButton = CreateIconButton(navBar.transform, "ShopNav", "UI/shop_icon", new Vector2(-300, 40)).GetComponent<Button>();
-            view.homeButton = CreateIconButton(navBar.transform, "HomeNav", "UI/home_icon", new Vector2(0, 40)).GetComponent<Button>();
-            view.collectionButton = CreateIconButton(navBar.transform, "CollectionNav", "UI/shop_icon", new Vector2(300, 40)).GetComponent<Button>(); // Using shop icon as lock placeholder
+            // --- LOCK 1: SHOP (LEFT) ---
+            view.shopButton = Create3DNavIconButton(navBar.transform, "ShopNav", "UI/shop_icon", lockTop, lockBottom, new Vector2(-320, 55), 130);
 
-            CreateText(navBar.transform, "Home", 30, new Color(0.3f, 0.3f, 0.6f, 1f), new Vector2(0, -40)).GetComponent<Text>().fontStyle = FontStyle.Bold;
+            // --- HOME BUTTON (CENTER) ---
+            view.homeButton = Create3DNavButton(navBar.transform, "HomeNav", "Home", "UI/home_icon", homeTop, homeBottom, homeAccent, new Vector2(0, 55));
+
+            // --- LOCK 2: COLLECTION (RIGHT) ---
+            view.collectionButton = Create3DNavIconButton(navBar.transform, "CollectionNav", "UI/shop_icon", lockTop, lockBottom, new Vector2(320, 55), 130);
+        }
+
+        private Button Create3DNavButton(Transform parent, string name, string label, string iconPath, Color top, Color bottom, Color accent, Vector2 pos)
+        {
+            GameObject root = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Button));
+            root.layer = 5; root.transform.SetParent(parent, false);
+            var rect = root.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(160, 160); // Container
+            rect.anchoredPosition = pos;
+
+            // Layer 1: Shadow (Under the pill only)
+            GameObject shadow = new GameObject("Shadow", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            shadow.transform.SetParent(root.transform, false);
+            var sRect = shadow.GetComponent<RectTransform>();
+            sRect.sizeDelta = new Vector2(180, 130); sRect.anchoredPosition = new Vector2(0, -8);
+            var sImg = shadow.GetComponent<Image>();
+            sImg.sprite = GetSoftShadowSprite(40, 20); sImg.type = Image.Type.Sliced;
+            sImg.color = new Color(0, 0, 0, 0.35f);
+
+            // Layer 2: Lavender Pill Face (FLAT - NOT 3D GLOSSY)
+            GameObject face = new GameObject("Face", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            face.transform.SetParent(root.transform, false);
+            var fRect = face.GetComponent<RectTransform>();
+            fRect.sizeDelta = new Vector2(140, 95); fRect.anchoredPosition = Vector2.zero;
+            var fImg = face.GetComponent<Image>();
+            fImg.sprite = GetRoundedRectSprite(); // Use flat sprite
+            fImg.type = Image.Type.Sliced;
+            fImg.color = top; // Use the primary lavender color
+            
+            root.GetComponent<Button>().targetGraphic = fImg;
+
+            // Layer 3: Icon (Centered in Pill)
+            GameObject iconObj = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            iconObj.transform.SetParent(face.transform, false);
+            var iRect = iconObj.GetComponent<RectTransform>();
+            iRect.sizeDelta = new Vector2(60, 60); iRect.anchoredPosition = Vector2.zero;
+            var iImg = iconObj.GetComponent<Image>();
+            Texture2D tex = Resources.Load<Texture2D>(iconPath);
+            if (tex) iImg.sprite = Sprite.Create(tex, new Rect(0,0,tex.width,tex.height), new Vector2(0.5f,0.5f));
+            iImg.color = accent; // Dark purple house
+
+            // Layer 4: Text (Below Face)
+            GameObject txtObj = CreateText(root.transform, label, 32, accent, new Vector2(0, -75));
+            txtObj.GetComponent<Text>().fontStyle = FontStyle.Bold;
+
+            return root.GetComponent<Button>();
+        }
+
+        private Button Create3DNavIconButton(Transform parent, string name, string iconPath, Color top, Color bottom, Vector2 pos, float size)
+        {
+            GameObject root = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Button));
+            root.layer = 5; root.transform.SetParent(parent, false);
+            var rect = root.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(size, size);
+            rect.anchoredPosition = pos;
+
+            // Icon Face (STANDALONE with Gradient)
+            GameObject iconObj = new GameObject("IconFace", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            iconObj.transform.SetParent(root.transform, false);
+            var iRect = iconObj.GetComponent<RectTransform>();
+            iRect.anchorMin = Vector2.zero; iRect.anchorMax = Vector2.one; iRect.sizeDelta = Vector2.zero;
+            var iImg = iconObj.GetComponent<Image>();
+            
+            // Build the styled icon sprite
+            Sprite styledSprite = GetStyledIconSprite(iconPath, top, bottom);
+            iImg.sprite = styledSprite;
+            
+            // SHAPE-MATCHED SHADOW (No background boxes/circles)
+            // We use the same icon shape but offset and tinted dark to create a true drop shadow
+            GameObject shadowObj = new GameObject("ShadowLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            shadowObj.transform.SetParent(iconObj.transform, false);
+            shadowObj.transform.SetAsFirstSibling();
+            var sRect = shadowObj.GetComponent<RectTransform>();
+            sRect.anchorMin = Vector2.zero; sRect.anchorMax = Vector2.one;
+            sRect.sizeDelta = Vector2.zero;
+            sRect.anchoredPosition = new Vector2(0, -8); // Offset
+            
+            var sImg = shadowObj.GetComponent<Image>();
+            sImg.sprite = styledSprite; // Match shape exactly
+            sImg.color = new Color(0, 0, 0, 0.4f); // Transparent dark shadow
+            
+            root.GetComponent<Button>().targetGraphic = iImg;
+
+            return root.GetComponent<Button>();
+        }
+
+        private Sprite GetStyledIconSprite(string path, Color top, Color bottom)
+        {
+            Texture2D src = Resources.Load<Texture2D>(path);
+            if (!src) return null;
+
+            // Note: If GetPixels fails (non-readable), we fallback to top color tint
+            try {
+                Texture2D dst = new Texture2D(src.width, src.height, TextureFormat.RGBA32, false);
+                Color[] pix = src.GetPixels();
+                for (int i = 0; i < pix.Length; i++) {
+                    int y = i / src.width;
+                    float t = (float)y / src.height;
+                    pix[i] *= Color.Lerp(bottom, top, t);
+                }
+                dst.SetPixels(pix); dst.Apply();
+                return Sprite.Create(dst, new Rect(0,0,dst.width,dst.height), new Vector2(0.5f,0.5f));
+            } catch {
+                return Sprite.Create(src, new Rect(0,0,src.width,src.height), new Vector2(0.5f,0.5f));
+            }
         }
 
         private GameObject CreateIconButton(Transform parent, string name, string resourcePath, Vector2 pos)
@@ -470,6 +604,140 @@ namespace EscapeED.EditorHelper
             trans.gameObject.layer = layer;
             foreach (Transform child in trans)
                 ForceLayerRecursive(child, layer);
+        }
+
+        private Sprite Get3DBoxSprite(Color baseColor)
+        {
+            int size = 128;
+            int depthHeight = 20; // Side thickness
+            float radius = 15.0f; 
+            
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+
+            // Color palette derived from base
+            Color faceBottom = baseColor;
+            Color faceTop    = Color.Lerp(baseColor, Color.white, 0.3f);
+            Color sideColor  = Color.Lerp(baseColor, Color.black, 0.25f);
+            Color highlight  = Color.white;
+            highlight.a = 0.6f;
+            Color shadow     = Color.black;
+            shadow.a = 0.3f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // Outer rounded rect check
+                    float dx = Mathf.Max(radius - x, 0, x - (size - 1 - radius));
+                    float dy = Mathf.Max(radius - y, 0, y - (size - 1 - radius));
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    if (dist > radius)
+                    {
+                        pixels[y * size + x] = Color.clear;
+                        continue;
+                    }
+
+                    Color finalCol;
+
+                    if (y < depthHeight)
+                    {
+                        // THE SIDE (DEPTH)
+                        finalCol = sideColor;
+                    }
+                    else
+                    {
+                        // THE FACE
+                        float faceT = (float)(y - depthHeight) / (size - depthHeight);
+                        finalCol = Color.Lerp(faceBottom, faceTop, faceT);
+
+                        // BEVELS / HIGHLIGHTS
+                        // Top Shine
+                        if (y > size - 8) finalCol = Color.Lerp(finalCol, highlight, 0.5f);
+                        // Bottom Face Shadow (Inner bevel)
+                        else if (y < depthHeight + 6) finalCol = Color.Lerp(finalCol, shadow, 0.4f);
+                        // Side Highlights (Optional)
+                        if (x < 6 || x > size - 6) finalCol = Color.Lerp(finalCol, shadow, 0.1f);
+                    }
+
+                    // Antialiasing
+                    if (dist > radius - 1.0f)
+                    {
+                        finalCol.a *= (radius - dist);
+                    }
+
+                    pixels[y * size + x] = finalCol;
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            // Sliced borders: Left=35, Bottom=45 (covers depth), Right=35, Top=35
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(35, 45, 35, 35));
+        }
+
+        private Sprite GetGlossyButtonSprite(Color topCol, Color bottomCol)
+        {
+            int size = 128;
+            float radius = 40.0f; 
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = Mathf.Max(radius - x, 0, x - (size - 1 - radius));
+                    float dy = Mathf.Max(radius - y, 0, y - (size - 1 - radius));
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    if (dist > radius) { pixels[y * size + x] = Color.clear; continue; }
+
+                    float t = (float)y / size;
+                    Color c = Color.Lerp(bottomCol, topCol, t);
+
+                    // High-end gloss highlight at the top
+                    if (y > size - 12) c = Color.Lerp(c, Color.white, 0.25f);
+                    // Subtle inner rim shadow
+                    else if (y < 12) c = Color.Lerp(c, Color.black, 0.1f);
+                    
+                    pixels[y * size + x] = c;
+                    if (dist > radius - 1f) pixels[y * size + x].a *= (radius - dist);
+                }
+            }
+            tex.SetPixels(pixels); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(50, 50, 50, 50));
+        }
+
+        private Sprite GetSoftShadowSprite(float radius, float blur)
+        {
+            int size = 128;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+            
+            float center = size / 2.0f;
+            float innerSize = size - (blur * 2.5f);
+            float innerRad = radius;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = Mathf.Max(Mathf.Abs(x - center) - (innerSize/2f - innerRad), 0);
+                    float dy = Mathf.Max(Mathf.Abs(y - center) - (innerSize/2f - innerRad), 0);
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    float alpha = 0;
+                    if (dist < innerRad) alpha = 1f;
+                    else if (dist < innerRad + blur) alpha = Mathf.SmoothStep(1f, 0f, (dist - innerRad) / blur);
+
+                    pixels[y * size + x] = new Color(0, 0, 0.15f, alpha); // Black/Dark blue shadow base
+                }
+            }
+            tex.SetPixels(pixels); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(50, 50, 50, 50));
         }
 
         private Sprite GetRoundedRectSprite()
