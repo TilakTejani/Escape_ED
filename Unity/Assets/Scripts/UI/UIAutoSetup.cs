@@ -258,21 +258,12 @@ namespace EscapeED.EditorHelper
             // 3. Link Components MANUALLY (Critical for device timing)
             lm.grid = grid;
             lm.navigator = nav;
-            lm.ghostController = ghost;
             lm.forceWhiteBackground = true;
-            
+
             // 4. AUTOMATED ASSET LINKING
+            // Note: arrowMaterial is set directly on the Arrow prefab's MeshRenderer — not injected here.
             lm.levelJsonFile = Resources.Load<TextAsset>("Levels/5x5x5");
             lm.arrowPrefab = Resources.Load<GameObject>("Prefabs/Arrow");
-            lm.arrowMaterial = Resources.Load<Material>("Materials/ArrowPulseMat");
-
-#if UNITY_EDITOR
-            // Editor fallback for Material if not in Resources
-            if (lm.arrowMaterial == null)
-            {
-                lm.arrowMaterial = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Materials/ArrowPulseMat.mat");
-            }
-#endif
 
             if (lm.levelJsonFile != null)
                 Debug.Log($"<color=green>[UIAutoSetup] SUCCESS: Level JSON Loaded: {lm.levelJsonFile.name}</color>");
