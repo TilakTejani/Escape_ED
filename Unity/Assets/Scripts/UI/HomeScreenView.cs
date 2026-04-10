@@ -53,7 +53,7 @@ namespace EscapeED.UI
             if (gsm == null) gsm = Object.FindAnyObjectByType<GameStateManager>();
 
             if (gsm != null)
-                gsm.UpdateState(GameState.LevelSelect);
+                gsm.UpdateState(GameState.Playing);
             else
                 Debug.LogError("[HomeScreen] FAILED to transition: GameStateManager missing!");
         }
