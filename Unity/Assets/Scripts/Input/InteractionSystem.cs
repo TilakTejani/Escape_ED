@@ -53,12 +53,22 @@ namespace EscapeED.InputHandling
             Ray ray = mainCamera.ScreenPointToRay(screenPosition);
             if (Physics.Raycast(ray, out RaycastHit hit, raycastDistance, interactableLayer))
             {
-                // We use GetComponentInParent to safely trigger even if the collider is on a child mesh
+                // Reject hits on back-facing arrow segments.
+                // hit.normal is unreliable for BoxColliders — the ray hits the camera-facing underside
+                // of the box even when the arrow's face points away from camera.
+                // ArrowSegmentFace stores the true arrow face normal (local space) on each segment child.
+                // For the tip MeshCollider (no ArrowSegmentFace), hit.normal IS the mesh triangle normal
+                // which correctly reflects the tip face orientation.
+                var segFace = hit.collider.GetComponent<ArrowSegmentFace>();
+                Vector3 faceNormalWS = segFace != null
+                    ? hit.collider.transform.parent.TransformDirection(segFace.localFaceNormal)
+                    : hit.normal;
+
+                if (Vector3.Dot(faceNormalWS, -ray.direction) <= 0f) return;
+
                 IInteractable interactable = hit.collider.GetComponentInParent<IInteractable>();
                 if (interactable != null)
-                {
                     interactable.OnInteract();
-                }
             }
         }
 
