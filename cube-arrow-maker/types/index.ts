@@ -23,6 +23,14 @@ export interface CubeGeometry {
   gridCoords: [number, number, number][] // Integer positions for logic (x, y, z)
   edges: [number, number][]
   posMap: Map<string, number> // Map of "x,y,z" string to vertex index
+  adjSet: Set<string>          // "min-max" edge keys for O(1) adjacency lookup
+}
+
+export interface SavedLevel {
+  id: string
+  name: string
+  savedAt: number // timestamp
+  level: Level
 }
 
 

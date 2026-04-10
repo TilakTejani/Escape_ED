@@ -54,12 +54,22 @@ export function generateCubeGeometry(nx: number, ny: number, nz: number): CubeGe
     }
   }
 
-  return { vertices, gridCoords, edges, posMap }
-}
-
-export function areAdjacent(edges: [number, number][], v1: number, v2: number): boolean {
+  // Build adjacency set for O(1) lookup
+  const adjSet = new Set<string>()
   for (let i = 0; i < edges.length; i++) {
     const [a, b] = edges[i]
+    adjSet.add(edgeKey(a, b))
+  }
+
+  return { vertices, gridCoords, edges, posMap, adjSet }
+}
+
+export function areAdjacent(edgesOrAdjSet: [number, number][] | Set<string>, v1: number, v2: number): boolean {
+  if (edgesOrAdjSet instanceof Set) {
+    return edgesOrAdjSet.has(edgeKey(v1, v2))
+  }
+  for (let i = 0; i < edgesOrAdjSet.length; i++) {
+    const [a, b] = edgesOrAdjSet[i]
     if ((a === v1 && b === v2) || (a === v2 && b === v1)) return true
   }
   return false
