@@ -1,8 +1,10 @@
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
-using UnityEngine.InputSystem.UI; 
+using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.UI;
 using EscapeED.UI;
+using EscapeED.InputHandling;
 
 namespace EscapeED.EditorHelper
 {
@@ -247,6 +249,24 @@ namespace EscapeED.EditorHelper
             CubeNavigator nav = core.GetComponent<CubeNavigator>() ?? core.AddComponent<CubeNavigator>();
             CubeRotator rot = core.GetComponent<CubeRotator>() ?? core.AddComponent<CubeRotator>();
             GhostCubeController ghost = core.GetComponent<GhostCubeController>() ?? core.AddComponent<GhostCubeController>();
+            
+            // 2b. Runtime Input Mapping (CRITICAL for Dynamic Rebuilds)
+            var inputAsset = Resources.Load<InputActionAsset>("Input/InputSystem_Actions");
+            if (inputAsset != null)
+            {
+                var playerMap = inputAsset.FindActionMap("Player");
+                if (playerMap != null)
+                {
+                    var lookAction   = playerMap.FindAction("Look");
+                    var pressAction  = playerMap.FindAction("Attack");
+                    var zoomAction    = playerMap.FindAction("Zoom");
+                    
+                    rot.InitializeRuntimeActions(lookAction, pressAction, zoomAction);
+                    Debug.Log("[UIAutoSetup] ✅ CubeRotator Input Actions Linked Successfully.");
+                }
+                else Debug.LogWarning("[UIAutoSetup] FAILED to find 'Player' action map!");
+            }
+            else Debug.LogWarning("[UIAutoSetup] FAILED to load InputSystem_Actions from Resources/Input/");
             
             // LevelManager depends on Grid and Navigator
             LevelManager lm = core.GetComponent<LevelManager>() ?? core.AddComponent<LevelManager>();
