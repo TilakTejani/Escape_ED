@@ -24,10 +24,10 @@ namespace EscapeED
         public const float  MITER_LIFT_THR        = 0.05f; // Dot threshold for multi-face vertex lift
 
         // --- Animation Timings & Speeds ---
-        public const float EJECT_STEP_TIME       = 0.10f; // Seconds per grid step during ejection
+        public const float EJECT_STEP_TIME       = 0.05f; // Seconds per grid step during ejection (2x faster)
         public const float SHAKE_STEP_TIME       = 0.08f; // Seconds per grid step during shake
         public const float SHAKE_PUSH_DIST_MULT  = 0.50f; // Multiplier of grid step for push depth
-        public const float EJECT_LAUNCH_ACCEL    = 40.0f; // Acceleration after leaving the cube
+        public const float EJECT_LAUNCH_ACCEL    = 80.0f; // Acceleration after leaving the cube (2x faster)
         public const float EJECT_FINAL_DURATION  = 0.40f; // Duration of off-screen launch phase
     }
 }

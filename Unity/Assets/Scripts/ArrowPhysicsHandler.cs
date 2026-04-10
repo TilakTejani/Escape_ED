@@ -4,6 +4,15 @@ using System.Collections.Generic;
 namespace EscapeED
 {
     /// <summary>
+    /// Stores the arrow face normal (local space) on a collider child.
+    /// InteractionSystem reads this to reject taps on back-facing segments.
+    /// </summary>
+    public class ArrowSegmentFace : MonoBehaviour
+    {
+        public Vector3 localFaceNormal;
+    }
+
+    /// <summary>
     /// Manages collision for the Arrow system.
     /// Handles pooling of segment colliders and dynamic mesh-based tip collider.
     /// </summary>
@@ -65,6 +74,7 @@ namespace EscapeED
                     obj.transform.SetParent(_owner.transform, false);
                     obj.layer = _owner.gameObject.layer;
                     col = obj.AddComponent<BoxCollider>();
+                    obj.AddComponent<ArrowSegmentFace>();
                     _segmentColliders.Add(col);
                 }
 
@@ -72,6 +82,9 @@ namespace EscapeED
                 col.transform.localRotation = rot;
                 col.center = new Vector3(0, surfaceOffset, 0);
                 col.size   = new Vector3(lineWidth, lineWidth, length);
+
+                // Always update face normal — faceN may change if path is reassigned.
+                col.GetComponent<ArrowSegmentFace>().localFaceNormal = faceN;
                 segIndex++;
             }
 
