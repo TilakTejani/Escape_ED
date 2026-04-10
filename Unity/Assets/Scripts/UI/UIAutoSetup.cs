@@ -343,18 +343,6 @@ namespace EscapeED.EditorHelper
             playRect.anchoredPosition = new Vector2(0, -400);
             view.playButton = playBtnObj.GetComponent<Button>();
 
-            // Layer 1: Soft Dynamic Shadow
-            GameObject shadowObj = new GameObject("ShadowLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            shadowObj.transform.SetParent(playBtnObj.transform, false);
-            var shadowRect = shadowObj.GetComponent<RectTransform>();
-            shadowRect.anchorMin = Vector2.zero; shadowRect.anchorMax = Vector2.one;
-            shadowRect.sizeDelta = new Vector2(60, 60); // Padding for blur
-            shadowRect.anchoredPosition = new Vector2(0, -12); // Modern offset
-            var shadowImg = shadowObj.GetComponent<Image>();
-            shadowImg.sprite = GetSoftShadowSprite(40, 25);
-            shadowImg.type = Image.Type.Sliced;
-            shadowImg.color = new Color(0, 0, 0, 0.4f);
-
             // Layer 2: Glossy Face
             GameObject faceObj = new GameObject("FaceLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             faceObj.transform.SetParent(playBtnObj.transform, false);
@@ -410,24 +398,15 @@ namespace EscapeED.EditorHelper
             rect.sizeDelta = new Vector2(160, 160); // Container
             rect.anchoredPosition = pos;
 
-            // Layer 1: Shadow (Under the pill only)
-            GameObject shadow = new GameObject("Shadow", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            shadow.transform.SetParent(root.transform, false);
-            var sRect = shadow.GetComponent<RectTransform>();
-            sRect.sizeDelta = new Vector2(180, 130); sRect.anchoredPosition = new Vector2(0, -8);
-            var sImg = shadow.GetComponent<Image>();
-            sImg.sprite = GetSoftShadowSprite(40, 20); sImg.type = Image.Type.Sliced;
-            sImg.color = new Color(0, 0, 0, 0.35f);
-
             // Layer 2: Lavender Pill Face (FLAT - NOT 3D GLOSSY)
             GameObject face = new GameObject("Face", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             face.transform.SetParent(root.transform, false);
             var fRect = face.GetComponent<RectTransform>();
-            fRect.sizeDelta = new Vector2(140, 95); fRect.anchoredPosition = Vector2.zero;
+            fRect.sizeDelta = new Vector2(160, 80); fRect.anchoredPosition = Vector2.zero; // Refined Pill Dimensions
             var fImg = face.GetComponent<Image>();
-            fImg.sprite = GetRoundedRectSprite(); // Use flat sprite
+            fImg.sprite = GetRoundedRectSprite(); // Updated for perfect pill roundness
             fImg.type = Image.Type.Sliced;
-            fImg.color = top; // Use the primary lavender color
+            fImg.color = top; 
             
             root.GetComponent<Button>().targetGraphic = fImg;
 
@@ -466,20 +445,6 @@ namespace EscapeED.EditorHelper
             // Build the styled icon sprite
             Sprite styledSprite = GetStyledIconSprite(iconPath, top, bottom);
             iImg.sprite = styledSprite;
-            
-            // SHAPE-MATCHED SHADOW (No background boxes/circles)
-            // We use the same icon shape but offset and tinted dark to create a true drop shadow
-            GameObject shadowObj = new GameObject("ShadowLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            shadowObj.transform.SetParent(iconObj.transform, false);
-            shadowObj.transform.SetAsFirstSibling();
-            var sRect = shadowObj.GetComponent<RectTransform>();
-            sRect.anchorMin = Vector2.zero; sRect.anchorMax = Vector2.one;
-            sRect.sizeDelta = Vector2.zero;
-            sRect.anchoredPosition = new Vector2(0, -8); // Offset
-            
-            var sImg = shadowObj.GetComponent<Image>();
-            sImg.sprite = styledSprite; // Match shape exactly
-            sImg.color = new Color(0, 0, 0, 0.4f); // Transparent dark shadow
             
             root.GetComponent<Button>().targetGraphic = iImg;
 
@@ -743,27 +708,25 @@ namespace EscapeED.EditorHelper
         private Sprite GetRoundedRectSprite()
         {
             int size = 128;
-            float radius = 25.0f; // Subtle roundness (Adjust to user preference)
+            float radius = 64.0f; // Perfect circle/pill when sliced at 64
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             Color[] pixels = new Color[size * size];
             for (int y = 0; y < size; y++)
             {
                 for (int x = 0; x < size; x++)
                 {
-                    // Distance to the edge of a rounded rect logic
                     float dx = Mathf.Max(radius - x, 0, x - (size - 1 - radius));
                     float dy = Mathf.Max(radius - y, 0, y - (size - 1 - radius));
                     float dist = Mathf.Sqrt(dx * dx + dy * dy);
 
-                    if (dist < radius - 1f) pixels[y * size + x] = Color.white;
-                    else if (dist < radius) pixels[y * size + x] = new Color(1, 1, 1, Mathf.Clamp01(radius - dist));
+                    if (dist < radius) pixels[y * size + x] = Color.white;
                     else pixels[y * size + x] = Color.clear;
                 }
             }
             tex.SetPixels(pixels);
             tex.Apply();
-            // Sliced with 30px borders ensures corners don't stretch
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(30, 30, 30, 30));
+            // Sliced with half-size borders (64) ensures perfect circular ends
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(64, 64, 64, 64));
         }
     }
 }
