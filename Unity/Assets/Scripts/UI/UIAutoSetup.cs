@@ -116,14 +116,174 @@ namespace EscapeED.EditorHelper
             // Build the Redesigned Menu Layout
             CreateHomeLayout(homeObj.transform, homeView);
             
-            // 6. FINAL SYNC: Attach listeners now that buttons exist (Critical for device)
-            homeView.InitializeSync();
+            // 6. Create Settings Panel (Stand-alone popup, not managed by UIManager state)
+            SettingsView settingsView = CreateSettingsPanel(canvasObj.transform);
+            homeView.settingsView = settingsView;
 
             // Link panels to UIManager & FINAL HANDSHAKE
+            // We EXCLUDE settingsView from this list so it doesn't conflict with Init state
             BaseUIPanel[] allPanels = new BaseUIPanel[] { splashView, homeView };
             uiManager.Initialize(allPanels);
 
+            // FINAL SYNC
+            homeView.InitializeSync();
+
             Debug.Log("[UIAutoSetup] SUCCESS: Handshake complete. UI is now synchronized.");
+        }
+
+        private SettingsView CreateSettingsPanel(Transform parent)
+        {
+            // 1. Background Overlay (Darken)
+            GameObject overlay = CreatePanel(parent, "SettingsPanel", new Color(0, 0, 0, 0.65f));
+            CanvasGroup cg = overlay.AddComponent<CanvasGroup>();
+            cg.alpha = 0f;
+            overlay.SetActive(false);
+
+            SettingsView view = overlay.AddComponent<SettingsView>();
+
+            // 2. Dialog Window
+            GameObject window = new GameObject("Window", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            window.transform.SetParent(overlay.transform, false);
+            var winRect = window.GetComponent<RectTransform>();
+            winRect.sizeDelta = new Vector2(650, 850); // Tall portrait dialog
+            var winImg = window.GetComponent<Image>();
+            winImg.sprite = GetRoundedRectSprite(); // Uses perfect pill logic for large rounded corners
+            winImg.type = Image.Type.Sliced;
+            winImg.color = Color.white;
+
+            // 3. Header: "SETTING"
+            CreateText(window.transform, "SETTING", 50, new Color(0.3f, 0.3f, 0.3f), new Vector2(0, 350)).GetComponent<Text>().fontStyle = FontStyle.Bold;
+
+            // 4. Close Button "X" (Top Right)
+            GameObject closeObj = CreateText(window.transform, "X", 55, new Color(0.4f, 0.4f, 0.4f), new Vector2(250, 350));
+            view.closeButton = closeObj.AddComponent<Button>();
+
+            // 5. Sound Row
+            view.soundToggle = CreateToggle(window.transform, "Sound", new Vector2(0, 180));
+            
+            // 6. Vibe Row
+            view.vibeToggle = CreateToggle(window.transform, "Vibe", new Vector2(0, 60));
+
+            // 7. Social / Policy Links (Clear Minimalist Style)
+            view.privacyButton = CreateMinimalButton(window.transform, "Privacy", new Vector2(0, -120));
+            view.purchasesButton = CreateMinimalButton(window.transform, "Purchases", new Vector2(0, -220));
+            
+            // 8. Version Footer
+            CreateText(window.transform, "1.1.0_1.1.0_prd(3)", 24, new Color(0.8f, 0.8f, 0.85f), new Vector2(0, -380));
+
+            view.InitializeSync();
+            return view;
+        }
+
+        private Toggle CreateToggle(Transform parent, string labelText, Vector2 pos)
+        {
+            GameObject root = new GameObject(labelText + "Row", typeof(RectTransform), typeof(Toggle));
+            root.transform.SetParent(parent, false);
+            var rect = root.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(520, 100); 
+            rect.anchoredPosition = pos;
+
+            // Label (Left-Aligned Cupertino Style)
+            GameObject labelObj = CreateText(root.transform, labelText, 38, new Color(0.1f, 0.1f, 0.1f), new Vector2(0, 0));
+            var labelRect = labelObj.GetComponent<RectTransform>();
+            labelRect.anchorMin = Vector2.zero; labelRect.anchorMax = new Vector2(0, 1);
+            labelRect.pivot = new Vector2(0, 0.5f);
+            labelRect.sizeDelta = new Vector2(300, 0);
+            labelRect.anchoredPosition = new Vector2(0, 0);
+            labelObj.GetComponent<Text>().alignment = TextAnchor.MiddleLeft;
+
+            // Toggle Background (Right-Aligned Switch)
+            GameObject bg = new GameObject("Background", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            bg.transform.SetParent(root.transform, false);
+            var bgRect = bg.GetComponent<RectTransform>();
+            bgRect.anchorMin = new Vector2(1, 0.5f); bgRect.anchorMax = new Vector2(1, 0.5f);
+            bgRect.pivot = new Vector2(1, 0.5f);
+            bgRect.sizeDelta = new Vector2(100, 60); // iOS standard aspect
+            bgRect.anchoredPosition = new Vector2(0, 0);
+            
+            var bgImg = bg.GetComponent<Image>();
+            bgImg.sprite = GetPillSprite(); 
+            bgImg.type = Image.Type.Sliced;
+            bgImg.color = new Color(0.898f, 0.898f, 0.918f); // #E5E5EA Light Gray
+
+            // Checkmark (Green Area On - managed by CupertinoToggle script)
+            GameObject checkmarkObj = new GameObject("Checkmark", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            checkmarkObj.transform.SetParent(bg.transform, false);
+            var checkRect = checkmarkObj.GetComponent<RectTransform>();
+            checkRect.anchorMin = Vector2.zero; checkRect.anchorMax = Vector2.one; checkRect.sizeDelta = Vector2.zero;
+            var checkImg = checkmarkObj.GetComponent<Image>();
+            checkImg.sprite = GetPillSprite();
+            checkImg.type = Image.Type.Sliced;
+            checkImg.color = new Color(0.204f, 0.780f, 0.349f); // #34C759 Bright Green
+
+            // Knob (White Circular Thumb)
+            GameObject knobObj = new GameObject("Knob", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            knobObj.transform.SetParent(bg.transform, false);
+            var kRect = knobObj.GetComponent<RectTransform>();
+            kRect.sizeDelta = new Vector2(54, 54); 
+            kRect.anchoredPosition = new Vector2(25, 0); 
+            var kImg = knobObj.GetComponent<Image>();
+            kImg.sprite = GetPillSprite();
+            kImg.color = Color.white;
+
+            Toggle toggle = root.GetComponent<Toggle>();
+            toggle.graphic = checkImg; // Still use green as the 'On' graphic
+            toggle.targetGraphic = bgImg;
+            toggle.isOn = true;
+
+            // ADD ANIMATOR
+            var animator = root.AddComponent<CupertinoToggle>();
+            animator.knob = kRect;
+            animator.backgroundImage = bgImg;
+            animator.onColor = new Color(0.204f, 0.780f, 0.349f);
+            animator.offColor = new Color(0.898f, 0.898f, 0.918f);
+
+            return toggle;
+        }
+
+        private Button CreateMinimalButton(Transform parent, string label, Vector2 pos)
+        {
+            GameObject btnObj = new GameObject(label + "Btn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            btnObj.transform.SetParent(parent, false);
+            var rect = btnObj.GetComponent<RectTransform>();
+            rect.sizeDelta = new Vector2(400, 80);
+            rect.anchoredPosition = pos;
+
+            // Invisible Background for Raycasting
+            var img = btnObj.GetComponent<Image>();
+            img.color = new Color(0, 0, 0, 0); 
+
+            // Text
+            GameObject txt = CreateText(btnObj.transform, label, 38, new Color(0.557f, 0.557f, 0.576f), Vector2.zero); // #8E8E93
+            
+            Button btn = btnObj.GetComponent<Button>();
+            // Add subtle press feedback
+            ColorBlock cb = btn.colors;
+            cb.pressedColor = new Color(0, 0, 0, 0.1f);
+            btn.colors = cb;
+
+            return btn;
+        }
+
+        private Sprite GetPillSprite()
+        {
+            int size = 128;
+            float radius = 64.0f; 
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = Mathf.Max(radius - x, 0, x - (size - 1 - radius));
+                    float dy = Mathf.Max(radius - y, 0, y - (size - 1 - radius));
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (dist < radius) pixels[y * size + x] = Color.white;
+                    else pixels[y * size + x] = Color.clear;
+                }
+            }
+            tex.SetPixels(pixels); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(64, 64, 64, 64));
         }
 
         private GameObject CreatePanel(Transform parent, string name, Color color)
@@ -398,13 +558,13 @@ namespace EscapeED.EditorHelper
             rect.sizeDelta = new Vector2(160, 160); // Container
             rect.anchoredPosition = pos;
 
-            // Layer 2: Lavender Pill Face (FLAT - NOT 3D GLOSSY)
+            // Layer 2: Lavender Rounded Rect Face (NOT PILL)
             GameObject face = new GameObject("Face", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
             face.transform.SetParent(root.transform, false);
             var fRect = face.GetComponent<RectTransform>();
-            fRect.sizeDelta = new Vector2(160, 80); fRect.anchoredPosition = Vector2.zero; // Refined Pill Dimensions
+            fRect.sizeDelta = new Vector2(130, 100); fRect.anchoredPosition = Vector2.zero; // Rectangular look
             var fImg = face.GetComponent<Image>();
-            fImg.sprite = GetRoundedRectSprite(); // Updated for perfect pill roundness
+            fImg.sprite = GetRoundedRectSprite(); 
             fImg.type = Image.Type.Sliced;
             fImg.color = top; 
             
@@ -708,7 +868,7 @@ namespace EscapeED.EditorHelper
         private Sprite GetRoundedRectSprite()
         {
             int size = 128;
-            float radius = 64.0f; // Perfect circle/pill when sliced at 64
+            float radius = 20.0f; // Standard Cupertino/iOS rounded rect radius
             Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             Color[] pixels = new Color[size * size];
             for (int y = 0; y < size; y++)
@@ -725,8 +885,8 @@ namespace EscapeED.EditorHelper
             }
             tex.SetPixels(pixels);
             tex.Apply();
-            // Sliced with half-size borders (64) ensures perfect circular ends
-            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(64, 64, 64, 64));
+            // Sliced with 30px borders ensures corners look correct for 20px radius
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(30, 30, 30, 30));
         }
     }
 }

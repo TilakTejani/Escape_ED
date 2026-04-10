@@ -18,6 +18,9 @@ namespace EscapeED.UI
         public Button homeButton;
         public Button collectionButton;
 
+        [Header("References")]
+        public SettingsView settingsView;
+
         protected override void Awake()
         {
             base.Awake();
@@ -62,6 +65,10 @@ namespace EscapeED.UI
         private void OnSettingsClicked()
         {
             Debug.Log("[HomeScreen] Settings Clicked!");
+            if (settingsView != null)
+            {
+                settingsView.Show();
+            }
         }
 
         private void OnShopClicked()
