@@ -268,22 +268,45 @@ namespace EscapeED.EditorHelper
             }
             else Debug.LogWarning("[UIAutoSetup] FAILED to load InputSystem_Actions from Resources/Input/");
             
+            // 2c. Input + Interaction System (order matters — Reader → Controller → Interaction)
+            InputReader inputReader = core.GetComponent<InputReader>() ?? core.AddComponent<InputReader>();
+            InputController inputController = core.GetComponent<InputController>() ?? core.AddComponent<InputController>();
+            InteractionSystem interactionSystem = core.GetComponent<InteractionSystem>() ?? core.AddComponent<InteractionSystem>();
+            interactionSystem.interactableLayer = LayerMask.GetMask(ArrowConstants.LAYER_ARROW);
+            Debug.Log("[UIAutoSetup] ✅ InteractionSystem wired with Arrow layer.");
+
             // LevelManager depends on Grid and Navigator
             LevelManager lm = core.GetComponent<LevelManager>() ?? core.AddComponent<LevelManager>();
 
             // Configure Grid
             grid.size = new Vector3Int(3, 3, 3);
             grid.spacing = 1.0f;
-            
+
             // 3. Link Components MANUALLY (Critical for device timing)
             lm.grid = grid;
             lm.navigator = nav;
             lm.forceWhiteBackground = true;
 
             // 4. AUTOMATED ASSET LINKING
-            // Note: arrowMaterial is set directly on the Arrow prefab's MeshRenderer — not injected here.
             lm.levelJsonFile = Resources.Load<TextAsset>("Levels/5x5x5");
             lm.arrowPrefab = Resources.Load<GameObject>("Prefabs/Arrow");
+
+            // Repair missing material on prefab — assigned directly to MeshRenderer, not via LevelManager.
+            if (lm.arrowPrefab != null)
+            {
+                MeshRenderer mr = lm.arrowPrefab.GetComponent<MeshRenderer>();
+                if (mr != null && mr.sharedMaterial == null)
+                {
+                    Material pulseMat = Resources.Load<Material>("Materials/ArrowPulseMat");
+                    if (pulseMat != null)
+                    {
+                        mr.sharedMaterial = pulseMat;
+                        Debug.Log("<color=green>[UIAutoSetup] Assigned ArrowPulseMat to Arrow prefab MeshRenderer.</color>");
+                    }
+                    else
+                        Debug.LogWarning("[UIAutoSetup] ArrowPulseMat not found in Resources/Materials/");
+                }
+            }
 
             if (lm.levelJsonFile != null)
                 Debug.Log($"<color=green>[UIAutoSetup] SUCCESS: Level JSON Loaded: {lm.levelJsonFile.name}</color>");
@@ -291,7 +314,7 @@ namespace EscapeED.EditorHelper
                 Debug.LogWarning("[UIAutoSetup] FAILED: Default Level JSON (5x5x5) not found in Resources/Levels/");
 
             if (lm.arrowPrefab == null) Debug.LogWarning("[UIAutoSetup] FAILED: Arrow Prefab not found in Resources/Prefabs/");
-            
+
             Debug.Log("[UIAutoSetup] ✅ Game Core is synchronized and correctly linked.");
         }
 

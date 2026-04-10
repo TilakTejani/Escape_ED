@@ -36,22 +36,22 @@ namespace EscapeED.Editor
 
                 // Find and Assign Prefabs if missing
                 if (manager.arrowPrefab == null) {
-                    string[] prefabGuids = AssetDatabase.FindAssets("ArrowContainer t:Prefab");
+                    string[] prefabGuids = AssetDatabase.FindAssets("Arrow t:Prefab");
                     if (prefabGuids.Length > 0) manager.arrowPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(prefabGuids[0]));
                 }
-                
+
                 // Auto-assign ArrowPulseMat directly to the MeshRenderer on the prefab
                 if (manager.arrowPrefab != null)
                 {
                     MeshRenderer mr = manager.arrowPrefab.GetComponent<MeshRenderer>();
                     if (mr != null && mr.sharedMaterial == null)
                     {
-                        Material pulseMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/ArrowPulseMat.mat");
+                        Material pulseMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Materials/ArrowPulseMat.mat");
                         if (pulseMat != null)
                         {
                             mr.sharedMaterial = pulseMat;
                             EditorUtility.SetDirty(manager.arrowPrefab);
-                            Debug.Log("✅ Assigned ArrowPulseMat to ArrowContainer MeshRenderer.");
+                            Debug.Log("✅ Assigned ArrowPulseMat to Arrow prefab MeshRenderer.");
                         }
                     }
                 }
@@ -61,7 +61,7 @@ namespace EscapeED.Editor
 
             // 2. Material Repair (Shader Fixing)
             Shader arrowShader = Shader.Find("EscapeED/ArrowPulsing");
-            Material arrowMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/ArrowPulseMat.mat");
+            Material arrowMat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Resources/Materials/ArrowPulseMat.mat");
             if (arrowMat != null && arrowShader != null) {
                 arrowMat.shader = arrowShader;
                 EditorUtility.SetDirty(arrowMat);

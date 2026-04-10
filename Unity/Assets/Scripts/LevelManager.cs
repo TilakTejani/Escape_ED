@@ -17,7 +17,7 @@ namespace EscapeED
         public CubeGrid grid;
         public bool forceWhiteBackground = true;
         public LayerMask arrowLayer;
-        private CubeNavigator navigator;
+        public CubeNavigator navigator;
 
         private List<GameObject>      activeArrows   = new List<GameObject>();
 
