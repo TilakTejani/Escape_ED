@@ -11,14 +11,19 @@ export default function GridSizePanel() {
   const { arrows, gridSize, setGridSize, generateArrows, straightness, setStraightness, geometry } = useLevelStore()
 
   const maxDim = Math.max(gridSize.x, gridSize.y, gridSize.z)
-  const [genMaxLen, setGenMaxLen] = useState(maxDim)
+  const maxPathLen = Math.max(2, Math.round(geometry.edges.length * 0.25))
+  const defaultLen = Math.max(2, Math.round(Math.sqrt(geometry.edges.length)))
+  const [genMaxLen, setGenMaxLen] = useState(Math.min(defaultLen, maxPathLen))
 
-  // Keep genMaxLen in sync when grid size changes
+  // When grid changes, reset to default (capped at new 25% limit)
   useEffect(() => {
-    setGenMaxLen(Math.max(gridSize.x, gridSize.y, gridSize.z))
-  }, [gridSize])
+    const newMax = Math.max(2, Math.round(geometry.edges.length * 0.25))
+    const newDefault = Math.max(2, Math.round(Math.sqrt(geometry.edges.length)))
+    setGenMaxLen(Math.min(newDefault, newMax))
+  }, [geometry])
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState(false)
 
   const changeAxis = (axis: keyof GridSize, value: number) => {
     const clamped = Math.min(MAX, Math.max(MIN, value))
@@ -30,9 +35,11 @@ export default function GridSizePanel() {
   const handleGenerate = () => {
     if (arrows.length > 0 && !confirm('This will replace all current arrows. Continue?')) return
     setGenerating(true)
+    setGenError(false)
     setTimeout(() => {
-      generateArrows(genMaxLen, difficulty)
+      const ok = generateArrows(genMaxLen, difficulty)
       setGenerating(false)
+      if (!ok) setGenError(true)
     }, 16)
   }
 
@@ -130,7 +137,7 @@ export default function GridSizePanel() {
           <input
             type="range"
             min={2}
-            max={maxDim}
+            max={maxPathLen}
             value={genMaxLen}
             onChange={(e) => setGenMaxLen(parseInt(e.target.value))}
             className="w-full h-1.5 rounded-lg appearance-none bg-slate-100 cursor-pointer accent-amber-500"
@@ -174,6 +181,12 @@ export default function GridSizePanel() {
             {generating ? 'Engine Working...' : 'Generate Puzzle'}
           </span>
         </button>
+
+        {genError && (
+          <p className="text-[10px] text-rose-500 font-semibold text-center -mt-1">
+            Generation failed — try adjusting path length or difficulty.
+          </p>
+        )}
       </div>
 
       {/* Stats Section */}

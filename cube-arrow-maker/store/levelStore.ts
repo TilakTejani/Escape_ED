@@ -71,7 +71,7 @@ interface LevelStore {
   tapFirstRemovable: () => boolean
   resetTest: () => void
 
-  generateArrows: (maxPathLen: number, difficulty: Difficulty) => void
+  generateArrows: (maxPathLen: number, difficulty: Difficulty) => boolean
 
   clearAll: () => void
   importLevel: (level: Level) => void
@@ -215,8 +215,10 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
   generateArrows: (maxPathLen, difficulty) => {
     const { gridSize, straightness } = get()
     const arrows = autoGenerateLevel(gridSize, maxPathLen, difficulty, straightness)
+    if (arrows.length === 0) return false  // generation failed — keep existing state
     const occupiedEdges = getOccupiedEdges(arrows)
     set({ arrows, pendingPath: [], selectedArrowId: null, removedInTest: [], mode: 'test', occupiedEdges })
+    return true
   },
 
   clearAll: () => set({ arrows: [], selectedArrowId: null, pendingPath: [], occupiedEdges: new Set() }),
