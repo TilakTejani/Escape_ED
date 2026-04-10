@@ -1,17 +1,22 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useLevelStore } from '@/store/levelStore'
-import { generateCubeGeometry } from '@/lib/cube'
 import { GridSize, Difficulty } from '@/types'
 
 const MIN = 2
 const MAX = 10
 
 export default function GridSizePanel() {
-  const { arrows, gridSize, setGridSize, generateArrows, straightness, setStraightness } = useLevelStore()
+  const { arrows, gridSize, setGridSize, generateArrows, straightness, setStraightness, geometry } = useLevelStore()
 
-  const [genMaxLen, setGenMaxLen] = useState(4)
+  const maxDim = Math.max(gridSize.x, gridSize.y, gridSize.z)
+  const [genMaxLen, setGenMaxLen] = useState(maxDim)
+
+  // Keep genMaxLen in sync when grid size changes
+  useEffect(() => {
+    setGenMaxLen(Math.max(gridSize.x, gridSize.y, gridSize.z))
+  }, [gridSize])
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [generating, setGenerating] = useState(false)
 
@@ -30,8 +35,6 @@ export default function GridSizePanel() {
       setGenerating(false)
     }, 16)
   }
-
-  const geometry = useMemo(() => generateCubeGeometry(gridSize.x, gridSize.y, gridSize.z), [gridSize])
 
   const avgTurnRate = useMemo(() => {
     if (arrows.length === 0) return 0
@@ -127,7 +130,7 @@ export default function GridSizePanel() {
           <input
             type="range"
             min={2}
-            max={10}
+            max={maxDim}
             value={genMaxLen}
             onChange={(e) => setGenMaxLen(parseInt(e.target.value))}
             className="w-full h-1.5 rounded-lg appearance-none bg-slate-100 cursor-pointer accent-amber-500"

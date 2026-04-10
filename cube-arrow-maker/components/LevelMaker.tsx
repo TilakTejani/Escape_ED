@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic'
 import LeftPanel from './LeftPanel'
 import BottomBar from './BottomBar'
 import GridSizePanel from './GridSizePanel'
+import LevelsPanel from './LevelsPanel'
 
 const Canvas3D = dynamic(() => import('./Canvas3D'), { ssr: false })
 
@@ -14,8 +15,9 @@ export default function LevelMaker() {
       <div className="flex flex-col flex-1 min-w-0">
         <div className="flex-1 relative">
           <Canvas3D />
-          {/* Floating grid size panel — top right of canvas */}
-          <div className="absolute top-4 right-4 z-10 pointer-events-auto">
+          {/* Floating panels — top right of canvas */}
+          <div className="absolute top-4 right-4 z-10 flex flex-col gap-3 pointer-events-auto">
+            <LevelsPanel />
             <GridSizePanel />
           </div>
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pointer-events-none">
