@@ -3,7 +3,7 @@ using System;
 
 namespace EscapeED
 {
-    public enum GameState { Init, MainMenu, Playing, Solving, Success, Failure }
+    public enum GameState { Init, MainMenu, LevelSelect, Playing, Solving, Success, Failure }
 
     public class GameStateManager : MonoBehaviour
     {

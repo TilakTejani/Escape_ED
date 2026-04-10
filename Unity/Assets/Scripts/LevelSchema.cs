@@ -17,6 +17,7 @@ namespace EscapeED
         public string id;
         public int[] path;
         public string headEnd; // "start" or "end"
+        public int[] headDir;  // direction vector [dx, dy, dz] in grid space
     }
 
     [Serializable]
