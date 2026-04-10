@@ -7,24 +7,86 @@ namespace EscapeED
     public class LevelManager : MonoBehaviour
     {
         [Header("Level Data")]
-        [Tooltip("The JSON file defining the arrows and paths.")]
+        [Tooltip("Optional: pin a specific level. Leave empty to use the Levels/ folder.")]
         public TextAsset levelJsonFile;
+
+        [Tooltip("Index of the level to load from Resources/Levels/ (0-based).")]
+        public int levelIndex = 0;
 
         [Header("Prefabs")]
         public GameObject arrowPrefab;
 
         [Header("References")]
         public CubeGrid grid;
-        public bool forceWhiteBackground = true; 
-        public LayerMask arrowLayer; // Use Layer 6 (Arrow) in Inspector
-        private CubeNavigator navigator;
+        public bool forceWhiteBackground = true;
+        public LayerMask arrowLayer;
+        public CubeNavigator navigator;
 
-        private List<GameObject>      activeArrows   = new List<GameObject>();
+        private List<GameObject> activeArrows = new List<GameObject>();
+        private TextAsset[]      allLevels    = null;
+
+        private void OnEnable()
+        {
+            GameStateManager.OnStateChanged += HandleStateChanged;
+        }
+
+        private void OnDisable()
+        {
+            GameStateManager.OnStateChanged -= HandleStateChanged;
+        }
+
+        private void HandleStateChanged(GameState newState)
+        {
+            if (newState == GameState.Playing)
+            {
+                Debug.Log("[LevelManager] Playing state detected. Auto-Generating Level...");
+                GenerateTestLevel();
+            }
+        }
 
         private void Reset()
         {
             if (grid == null)      grid      = GetComponent<CubeGrid>();
             if (navigator == null) navigator = GetComponent<CubeNavigator>();
+        }
+
+        // Load (or reload) all levels from Resources/Levels/
+        private void EnsureLevelsLoaded()
+        {
+            if (allLevels != null && allLevels.Length > 0) return;
+            allLevels = Resources.LoadAll<TextAsset>("Levels");
+            if (allLevels == null || allLevels.Length == 0)
+                Debug.LogWarning("[LevelManager] No levels found in Resources/Levels/");
+            else
+                Debug.Log($"[LevelManager] Found {allLevels.Length} level(s) in Resources/Levels/");
+        }
+
+        public int LevelCount
+        {
+            get { EnsureLevelsLoaded(); return allLevels != null ? allLevels.Length : 0; }
+        }
+
+        public void LoadLevelByIndex(int index)
+        {
+            EnsureLevelsLoaded();
+            if (allLevels == null || allLevels.Length == 0)
+            {
+                Debug.LogWarning("[LevelManager] No levels available.");
+                GenerateProceduralLevel();
+                return;
+            }
+            levelIndex = Mathf.Clamp(index, 0, allLevels.Length - 1);
+            if (grid == null) grid = GetComponent<CubeGrid>();
+            grid.GenerateGrid();
+            Debug.Log($"[LevelManager] Loading level [{levelIndex}]: {allLevels[levelIndex].name}");
+            LoadLevelFromJSON(allLevels[levelIndex]);
+        }
+
+        public void LoadNextLevel()
+        {
+            EnsureLevelsLoaded();
+            int next = (levelIndex + 1) % Mathf.Max(1, LevelCount);
+            LoadLevelByIndex(next);
         }
 
         [ContextMenu("Generate Test Level")]
@@ -39,15 +101,15 @@ namespace EscapeED
                 return;
             }
 
-            if (levelJsonFile != null)
+            // Load from Resources/Levels/ by index
+            EnsureLevelsLoaded();
+            if (allLevels != null && allLevels.Length > 0)
             {
-                grid.GenerateGrid();
-                Debug.Log($"[LevelManager] Loading level from JSON: {levelJsonFile.name}");
-                LoadLevelFromJSON(levelJsonFile);
+                LoadLevelByIndex(levelIndex);
             }
             else
             {
-                Debug.LogWarning("[LevelManager] No JSON assigned. Falling back to procedural.");
+                Debug.LogWarning("[LevelManager] No JSON found. Falling back to procedural.");
                 GenerateProceduralLevel();
             }
         }
@@ -200,16 +262,7 @@ namespace EscapeED
                 }
             }
 
-            if (GameStateManager.Instance != null)
-                GameStateManager.Instance.UpdateState(GameState.Playing);
-
-            if (levelJsonFile != null)
-            {
-                if (grid == null) grid = GetComponent<CubeGrid>();
-                grid.GenerateGrid();
-                LoadLevelFromJSON(levelJsonFile);
-                Debug.Log("[LevelManager] Auto-loaded level on Start.");
-            }
+            // Level loading is driven entirely by GameState.Playing event
         }
 
         void Update()
@@ -234,7 +287,22 @@ namespace EscapeED
             {
                 arrow.Eject();
                 activeArrows.Remove(arrow.gameObject);
+
+                if (activeArrows.Count == 0)
+                    OnLevelComplete();
             }
+        }
+
+        private void OnLevelComplete()
+        {
+            Debug.Log("[LevelManager] Level complete! Loading next level...");
+            StartCoroutine(LoadNextLevelDelayed(1.0f));
+        }
+
+        private System.Collections.IEnumerator LoadNextLevelDelayed(float delay)
+        {
+            yield return new WaitForSeconds(delay);
+            LoadNextLevel();
         }
 
         // Zero-GC Mobile Optimization for Overlap Queries
@@ -295,6 +363,15 @@ namespace EscapeED
         [ContextMenu("Generate Procedural Level")]
         public void GenerateProceduralLevel()
         {
+            if (grid == null)      grid      = GetComponent<CubeGrid>();
+            if (navigator == null) navigator = GetComponent<CubeNavigator>();
+            
+            if (grid == null || navigator == null)
+            {
+                Debug.LogError($"[LevelManager] FAILED: Grid({grid!=null}) or Navigator({navigator!=null}) missing!");
+                return;
+            }
+
             ClearActiveLevel();
 
             Vector3Int startPoint = Vector3Int.zero;

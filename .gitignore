@@ -1,32 +1,42 @@
 # Unity Project (Source)
-Unity/[Ll]ibrary/
-Unity/[Tt]emp/
-Unity/[Oo]bj/
-Unity/[Bb]uild/
-Unity/[Bb]uilds/
-Unity/[Ll]ogs/
-Unity/[Mm]emoryCaptures/
-Unity/[Vv]ideoCaptures/
-Unity/[Uu]serSettings/
-Unity/[Hh]ubState/
-Unity/[Aa]ssetProcessorState/
-Unity/.plastic/
-Unity/.utmp/
-Unity/*.csproj
-Unity/*.unitypackage
-Unity/*.sln
-Unity/*.suo
-Unity/*.tmp
-Unity/*.user
-Unity/*.userprefs
-Unity/*.pidb
-Unity/*.booproj
-Unity/*.svd
-Unity/*.pdb
-Unity/*.opendb
-Unity/*.IDB
-Unity/*.VC.db
-Unity/*.VC.VC.opendb
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Mm]emoryCaptures/
+/[Vv]ideoCaptures/
+
+# Asset paths (covers both root and subfolders)
+**/[Ll]ibrary/
+**/[Tt]emp/
+**/[Oo]bj/
+**/[Bb]uild/
+**/[Bb]uilds/
+**/[Ll]ogs/
+**/[Mm]emoryCaptures/
+**/[Vv]ideoCaptures/
+**/[Uu]serSettings/
+**/[Hh]ubState/
+**/[Aa]ssetProcessorState/
+**/.plastic/
+**/.utmp/
+**/*.csproj
+**/*.unitypackage
+**/*.sln
+**/*.suo
+**/*.tmp
+**/*.user
+**/*.userprefs
+**/*.pidb
+**/*.booproj
+**/*.svd
+**/*.pdb
+**/*.opendb
+**/*.IDB
+**/*.VC.db
+**/*.VC.VC.opendb
 
 # Web / Level Maker
 cube-arrow-maker/node_modules/
@@ -37,15 +47,41 @@ cube-arrow-maker/.vercel
 cube-arrow-maker/*.tsbuildinfo
 cube-arrow-maker/next-env.d.ts
 
-# Unity Native Exports (Builds)
-/[Ii]OS/
-/[Aa]ndroid/
-/[Uu]serSettings/
+# IDE / Editors
+.idea/
+.vscode/
+.vs/
+*.swp
+*.swo
+
+# Unity Build Outputs
+Android/
+iOS/
+WebGL/
+StandaloneWindows/
+StandaloneWindows64/
+StandaloneOSX/
+StandaloneLinux64/
+
+# Unity Auto-generated / Crash Recovery
+**/[_]Recovery/
+Unity/Assets/Resources/PerformanceTestRunInfo.json
+Unity/Assets/Resources/PerformanceTestRunInfo.json.meta
+Unity/Assets/Resources/PerformanceTestRunSettings.json
+Unity/Assets/Resources/PerformanceTestRunSettings.json.meta
+Unity/mono_crash.*.json
 
 # OS / Misc
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
 .claude/
+.gemini/
 npm-debug.log*
 yarn-debug.log*
 .env*
-.utmp/

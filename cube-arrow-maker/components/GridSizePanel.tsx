@@ -1,19 +1,50 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useLevelStore } from '@/store/levelStore'
-import { generateCubeGeometry } from '@/lib/cube'
 import { GridSize, Difficulty } from '@/types'
 
 const MIN = 2
 const MAX = 10
 
 export default function GridSizePanel() {
-  const { arrows, gridSize, setGridSize, generateArrows, straightness, setStraightness } = useLevelStore()
+  const { arrows, gridSize, setGridSize, generateArrows, straightness, setStraightness, geometry, mode, removedInTest, resetTest, tapFirstRemovable } = useLevelStore()
 
-  const [genMaxLen, setGenMaxLen] = useState(4)
+  const [autoSolving, setAutoSolving] = useState(false)
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const startAutoSolve = () => {
+    if (autoSolving) return
+    setAutoSolving(true)
+    const step = () => {
+      const removed = useLevelStore.getState().tapFirstRemovable()
+      if (removed) { autoTimer.current = setTimeout(step, 50) }
+      else { setAutoSolving(false) }
+    }
+    step()
+  }
+
+  const stopAutoSolve = () => {
+    if (autoTimer.current) clearTimeout(autoTimer.current)
+    setAutoSolving(false)
+  }
+
+  const solved = mode === 'test' && removedInTest.length === arrows.length && arrows.length > 0
+
+  const maxDim = Math.max(gridSize.x, gridSize.y, gridSize.z)
+  const maxPathLen = Math.max(2, Math.round(geometry.edges.length * 0.25))
+  const defaultLen = Math.max(2, Math.round(Math.sqrt(geometry.edges.length)))
+  const [genMaxLen, setGenMaxLen] = useState(Math.min(defaultLen, maxPathLen))
+
+  // When grid changes, reset to default (capped at new 25% limit)
+  useEffect(() => {
+    const newMax = Math.max(2, Math.round(geometry.edges.length * 0.25))
+    const newDefault = Math.max(2, Math.round(Math.sqrt(geometry.edges.length)))
+    setGenMaxLen(Math.min(newDefault, newMax))
+  }, [geometry])
   const [difficulty, setDifficulty] = useState<Difficulty>('medium')
   const [generating, setGenerating] = useState(false)
+  const [genError, setGenError] = useState(false)
 
   const changeAxis = (axis: keyof GridSize, value: number) => {
     const clamped = Math.min(MAX, Math.max(MIN, value))
@@ -23,15 +54,14 @@ export default function GridSizePanel() {
   }
 
   const handleGenerate = () => {
-    if (arrows.length > 0 && !confirm('This will replace all current arrows. Continue?')) return
     setGenerating(true)
+    setGenError(false)
     setTimeout(() => {
-      generateArrows(genMaxLen, difficulty)
+      const ok = generateArrows(genMaxLen, difficulty)
       setGenerating(false)
+      if (!ok) setGenError(true)
     }, 16)
   }
-
-  const geometry = useMemo(() => generateCubeGeometry(gridSize.x, gridSize.y, gridSize.z), [gridSize])
 
   const avgTurnRate = useMemo(() => {
     if (arrows.length === 0) return 0
@@ -127,7 +157,7 @@ export default function GridSizePanel() {
           <input
             type="range"
             min={2}
-            max={10}
+            max={maxPathLen}
             value={genMaxLen}
             onChange={(e) => setGenMaxLen(parseInt(e.target.value))}
             className="w-full h-1.5 rounded-lg appearance-none bg-slate-100 cursor-pointer accent-amber-500"
@@ -171,6 +201,35 @@ export default function GridSizePanel() {
             {generating ? 'Engine Working...' : 'Generate Puzzle'}
           </span>
         </button>
+
+        {genError && (
+          <p className="text-[10px] text-rose-500 font-semibold text-center -mt-1">
+            Generation failed — try adjusting path length or difficulty.
+          </p>
+        )}
+
+        {/* Test controls — only in test mode */}
+        {mode === 'test' && arrows.length > 0 && (
+          <div className="flex gap-2 mt-1">
+            <button
+              onClick={autoSolving ? stopAutoSolve : startAutoSolve}
+              disabled={solved}
+              className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${
+                autoSolving
+                  ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                  : 'bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed'
+              }`}
+            >
+              {autoSolving ? '⏹ Stop' : '▶▶ Auto Solve'}
+            </button>
+            <button
+              onClick={() => { stopAutoSolve(); resetTest() }}
+              className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-600 transition-all"
+            >
+              Reset
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Stats Section */}

@@ -20,6 +20,7 @@ namespace EscapeED
             {
                 Instance = this;
                 DontDestroyOnLoad(gameObject);
+                Debug.Log("[GameStateManager] Awake - Singleton Instance Ready");
             }
             else
             {

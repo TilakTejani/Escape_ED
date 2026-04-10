@@ -1,11 +1,11 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { ThreeEvent } from '@react-three/fiber'
 import { OrbitControls, Line } from '@react-three/drei'
 import * as THREE from 'three'
 import { useLevelStore } from '@/store/levelStore'
-import { generateCubeGeometry, edgeKey, getOccupiedEdges, getExitDirection, canArrowExit, getNeighbors } from '@/lib/cube'
+import { edgeKey, getExitDirection, canArrowExit, getNeighbors } from '@/lib/cube'
 import { Arrow } from '@/types'
 
 // Track pointer movement to distinguish click from drag
@@ -189,11 +189,10 @@ function EdgeLine({
 
 // ─── Arrow mesh ────────────────────────────────────────────────────────────────
 function ArrowMesh({ arrow, isRemoved }: { arrow: Arrow; isRemoved: boolean }) {
-  const { mode, selectedArrowId, selectArrow, tapArrow, arrows, removedInTest, gridSize, hideBlocked } = useLevelStore()
+  const { mode, selectedArrowId, selectArrow, tapArrow, arrows, removedInTest, gridSize, hideBlocked, geometry } = useLevelStore()
   const [hovered, setHovered] = useState(false)
   const { onDown, isClick } = useDragGuard()
 
-  const geometry = useMemo(() => generateCubeGeometry(gridSize.x, gridSize.y, gridSize.z), [gridSize])
   const { vertices } = geometry
 
   if (isRemoved) return null
@@ -343,10 +342,8 @@ function CubeFaces({ gridSize }: { gridSize: { x: number, y: number, z: number }
 
 // ─── Main scene ────────────────────────────────────────────────────────────────
 export default function CubeScene() {
-  const { gridSize, arrows, pendingPath, mode, removedInTest } = useLevelStore()
-  const geometry = useMemo(() => generateCubeGeometry(gridSize.x, gridSize.y, gridSize.z), [gridSize])
+  const { gridSize, arrows, pendingPath, mode, removedInTest, geometry, occupiedEdges: occupied } = useLevelStore()
   const { vertices, edges } = geometry
-  const occupied = getOccupiedEdges(arrows)
 
   const pendingEdges = new Set<string>()
   for (let i = 0; i < pendingPath.length - 1; i++) {
@@ -415,18 +412,21 @@ export default function CubeScene() {
         const isOccupied = arrows.some((a) => a.path.includes(i)) && !isInPending
         const isReachable = reachableVertices.has(i)
 
-        // In test mode: show dots for vertices not covered by any remaining arrow
         if (mode === 'test') {
           const isPartOfArrow = arrows.some((a) => !removedInTest.includes(a.id) && a.path.includes(i))
           if (isPartOfArrow) return null
           return (
             <mesh key={i} position={pos}>
-              <sphereGeometry args={[0.03, 8, 8]} />
-              <meshStandardMaterial color="#cbd5e1" roughness={0.4} />
+              <sphereGeometry args={[0.07, 12, 12]} />
+              <meshStandardMaterial color="#f97316" emissive="#f97316" emissiveIntensity={0.4} roughness={0.3} />
             </mesh>
           )
         }
 
+        // Occupied vertices (already in an arrow): hidden — the arrow body marks them
+        if (isOccupied) return null
+
+        // Uncovered + pending vertices: interactive VertexDot
         return (
           <VertexDot
             key={i}

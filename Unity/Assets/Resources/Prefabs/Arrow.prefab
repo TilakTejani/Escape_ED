@@ -13,7 +13,7 @@ GameObject:
   - component: {fileID: 1116789332955183900}
   - component: {fileID: 7636336366976558683}
   m_Layer: 0
-  m_Name: ArrowContainer
+  m_Name: Arrow
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -46,7 +46,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94418072742ca4496a3a6d62496a7607, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Arrow
-  arrowEjectMaterial: {fileID: 2100000, guid: 0d170543de2d348968ae387899184e19, type: 2}
+  arrowEjectMaterial: {fileID: 0}
   lineWidth: 0.08
   tipLengthMult: 2.5
   tipWidthMult: 2.5

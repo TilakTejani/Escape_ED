@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 import { useLevelStore } from '@/store/levelStore'
 import { EditorMode } from '@/types'
 
@@ -16,31 +16,8 @@ export default function LeftPanel() {
     pendingPath, pendingHeadEnd, setPendingHeadEnd, confirmArrow, cancelPending,
     pendingError, clearPendingError,
     selectedArrowId, selectArrow, arrows, deleteArrow,
-    removedInTest, resetTest, hideBlocked, toggleHideBlocked,
-    tapFirstRemovable,
+    removedInTest, hideBlocked, toggleHideBlocked,
   } = useLevelStore()
-
-  const [autoSolving, setAutoSolving] = useState(false)
-  const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const startAutoSolve = () => {
-    if (autoSolving) return
-    setAutoSolving(true)
-    const step = () => {
-      const removed = useLevelStore.getState().tapFirstRemovable()
-      if (removed) {
-        autoTimer.current = setTimeout(step, 50)
-      } else {
-        setAutoSolving(false)
-      }
-    }
-    step()
-  }
-
-  const stopAutoSolve = () => {
-    if (autoTimer.current) clearTimeout(autoTimer.current)
-    setAutoSolving(false)
-  }
 
   const selectedArrow = arrows.find((a) => a.id === selectedArrowId)
   const solved = mode === 'test' && removedInTest.length === arrows.length && arrows.length > 0
@@ -213,27 +190,6 @@ export default function LeftPanel() {
             style={{ fontFamily: 'Outfit, sans-serif' }}
           >
             {hideBlocked ? 'Show blocked' : 'Hide blocked'}
-          </button>
-
-          <button
-            onClick={autoSolving ? stopAutoSolve : startAutoSolve}
-            disabled={solved}
-            className={`w-full py-2 rounded-lg text-xs font-medium transition-all cursor-pointer mb-2 ${
-              autoSolving
-                ? 'bg-amber-500 hover:bg-amber-600 text-white'
-                : 'bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40 disabled:cursor-not-allowed'
-            }`}
-            style={{ fontFamily: 'Outfit, sans-serif' }}
-          >
-            {autoSolving ? '⏹ Stop' : '▶▶ Auto Solve'}
-          </button>
-
-          <button
-            onClick={() => { stopAutoSolve(); resetTest() }}
-            className="w-full py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-medium text-slate-600 transition-all cursor-pointer"
-            style={{ fontFamily: 'Outfit, sans-serif' }}
-          >
-            Reset Test
           </button>
         </div>
       )}
