@@ -2,6 +2,19 @@ import { Arrow, GridSize, Difficulty, CubeGeometry } from '@/types'
 import { generateCubeGeometry, gridKey } from './cube'
 import { v4 as uuid } from 'uuid'
 
+function computeHeadDir(
+  path: number[],
+  headEnd: 'start' | 'end',
+  gridCoords: [number, number, number][]
+): [number, number, number] {
+  const [tailV, headV] = headEnd === 'end'
+    ? [path[path.length - 2], path[path.length - 1]]
+    : [path[1], path[0]]
+  const [tx, ty, tz] = gridCoords[tailV]
+  const [hx, hy, hz] = gridCoords[headV]
+  return [hx - tx, hy - ty, hz - tz]
+}
+
 // ─── Difficulty Configuration ──────────────────────────────────────────────────
 
 interface DifficultyConfig {
@@ -414,7 +427,7 @@ function assignExits(
       if (info.trajectory.length === 0) {
         for (const v of path) occupiedVerts.add(v)
         for (let j = 0; j < path.length - 1; j++) occupiedEdges.add(edgeKey(path[j], path[j + 1]))
-        placed.push({ id: uuid(), path, headEnd })
+        placed.push({ id: uuid(), path, headEnd, headDir: computeHeadDir(path, headEnd, geometry.gridCoords) })
         assigned = true; break
       }
 
@@ -427,7 +440,7 @@ function assignExits(
       if (!blocked) {
         for (const v of path) occupiedVerts.add(v)
         for (let j = 0; j < path.length - 1; j++) occupiedEdges.add(edgeKey(path[j], path[j + 1]))
-        placed.push({ id: uuid(), path, headEnd })
+        placed.push({ id: uuid(), path, headEnd, headDir: computeHeadDir(path, headEnd, geometry.gridCoords) })
         assigned = true; break
       }
     }
@@ -451,7 +464,7 @@ function fallbackAssign(
     const eOk = e.exitsCleanly && !e.selfBlocked
     const headEnd: 'start' | 'end' =
       sOk && (!eOk || s.trajectory.length <= e.trajectory.length) ? 'start' : 'end'
-    return { id: uuid(), path, headEnd }
+    return { id: uuid(), path, headEnd, headDir: computeHeadDir(path, headEnd, geometry.gridCoords) }
   })
 }
 

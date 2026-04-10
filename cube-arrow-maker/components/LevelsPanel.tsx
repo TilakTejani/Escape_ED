@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useLevelStore } from '@/store/levelStore'
 import { SavedLevel } from '@/types'
 
@@ -15,12 +15,14 @@ function LevelRow({
   onLoad,
   onDelete,
   onRename,
+  onDownload,
 }: {
   entry: SavedLevel
   isCurrent: boolean
   onLoad: () => void
   onDelete: () => void
   onRename: (name: string) => void
+  onDownload: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(entry.name)
@@ -75,6 +77,13 @@ function LevelRow({
       {!editing && (
         <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
           <button
+            title="Download"
+            onClick={onDownload}
+            className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-[10px] text-slate-500 transition-colors"
+          >
+            ↓
+          </button>
+          <button
             title="Rename"
             onClick={() => { setDraft(entry.name); setEditing(true) }}
             className="w-6 h-6 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-[10px] text-slate-500 transition-colors"
@@ -102,6 +111,7 @@ export default function LevelsPanel() {
     currentLevelId,
     currentLevelName,
     arrows,
+    geometry,
     setCurrentLevelName,
     saveCurrentLevel,
     loadLevel,
@@ -112,17 +122,33 @@ export default function LevelsPanel() {
     importLevel,
   } = useLevelStore()
 
+  const stats = useMemo(() => {
+    if (arrows.length === 0) return null
+    let turns = 0, segments = 0
+    for (const arrow of arrows) {
+      if (arrow.path.length <= 2) continue
+      segments += arrow.path.length - 2
+      let lastDir: [number, number, number] | null = null
+      for (let i = 1; i < arrow.path.length; i++) {
+        const [ux, uy, uz] = geometry.gridCoords[arrow.path[i - 1]]
+        const [vx, vy, vz] = geometry.gridCoords[arrow.path[i]]
+        const dir: [number, number, number] = [vx - ux, vy - uy, vz - uz]
+        if (lastDir && (dir[0] !== lastDir[0] || dir[1] !== lastDir[1] || dir[2] !== lastDir[2])) turns++
+        lastDir = dir
+      }
+    }
+    const turnPct = segments > 0 ? Math.round((turns / segments) * 100) : 0
+    const coveredVerts = new Set(arrows.flatMap(a => a.path)).size
+    const totalVerts = geometry.vertices.length
+    return { turnPct, coveredVerts, totalVerts }
+  }, [arrows, geometry])
+
   const [nameInput, setNameInput] = useState('')
   const [showNameInput, setShowNameInput] = useState(false)
   const [importError, setImportError] = useState<string | null>(null)
 
   const handleSave = () => {
-    if (currentLevelId) {
-      saveCurrentLevel()
-    } else {
-      setShowNameInput(true)
-      setNameInput(currentLevelName === 'Untitled Level' ? '' : currentLevelName)
-    }
+    saveCurrentLevel()
   }
 
   const commitSave = () => {
@@ -186,6 +212,19 @@ export default function LevelsPanel() {
           </span>
         </div>
 
+        {stats && (
+          <div className="flex gap-2">
+            <div className="flex-1 bg-violet-50 border border-violet-100 rounded-lg px-2.5 py-1.5">
+              <p className="text-[9px] text-violet-400 font-bold uppercase tracking-wider">Turn Rate</p>
+              <p className="text-xs font-black text-violet-600 tabular-nums">{stats.turnPct}%</p>
+            </div>
+            <div className="flex-1 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Coverage</p>
+              <p className="text-xs font-black text-slate-600 tabular-nums">{stats.coveredVerts}<span className="text-slate-400 font-medium">/{stats.totalVerts}</span></p>
+            </div>
+          </div>
+        )}
+
         {/* Save name prompt */}
         {showNameInput && (
           <div className="flex gap-2 items-center">
@@ -210,7 +249,7 @@ export default function LevelsPanel() {
             disabled={arrows.length === 0}
             className="flex-1 py-2 rounded-xl bg-violet-500 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-sm shadow-violet-200"
           >
-            {currentLevelId ? 'Save' : 'Save As...'}
+            Save
           </button>
           <button
             onClick={handleExportJSON}
@@ -243,6 +282,15 @@ export default function LevelsPanel() {
                 onLoad={() => loadLevel(entry.id)}
                 onDelete={() => deleteLevel(entry.id)}
                 onRename={(name) => renameLevel(entry.id, name)}
+                onDownload={() => {
+                  const blob = new Blob([JSON.stringify(entry.level, null, 2)], { type: 'application/json' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `${entry.name.replace(/\s+/g, '_')}.json`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
               />
             ))}
           </div>

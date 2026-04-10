@@ -2,6 +2,7 @@ export interface Arrow {
   id: string
   path: number[] // sequence of vertex indices
   headEnd: 'start' | 'end'
+  headDir: [number, number, number] // unit direction the arrowhead points (grid space)
 }
 
 export interface GridSize {

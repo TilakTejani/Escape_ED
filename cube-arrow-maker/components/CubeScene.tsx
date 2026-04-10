@@ -412,18 +412,21 @@ export default function CubeScene() {
         const isOccupied = arrows.some((a) => a.path.includes(i)) && !isInPending
         const isReachable = reachableVertices.has(i)
 
-        // In test mode: show dots for vertices not covered by any remaining arrow
         if (mode === 'test') {
           const isPartOfArrow = arrows.some((a) => !removedInTest.includes(a.id) && a.path.includes(i))
           if (isPartOfArrow) return null
           return (
             <mesh key={i} position={pos}>
-              <sphereGeometry args={[0.03, 8, 8]} />
-              <meshStandardMaterial color="#cbd5e1" roughness={0.4} />
+              <sphereGeometry args={[0.07, 12, 12]} />
+              <meshStandardMaterial color="#f97316" emissive="#f97316" emissiveIntensity={0.4} roughness={0.3} />
             </mesh>
           )
         }
 
+        // Occupied vertices (already in an arrow): hidden — the arrow body marks them
+        if (isOccupied) return null
+
+        // Uncovered + pending vertices: interactive VertexDot
         return (
           <VertexDot
             key={i}
