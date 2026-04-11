@@ -1017,8 +1017,8 @@ namespace EscapeED.EditorHelper
             contentRect.anchorMin = Vector2.zero; contentRect.anchorMax = Vector2.one;
             contentRect.sizeDelta = Vector2.zero;
             var hintHLG = hintContent.GetComponent<HorizontalLayoutGroup>();
-            hintHLG.padding = new RectOffset(20, 20, 0, 0); // Explicit internal padding
-            hintHLG.childAlignment = TextAnchor.MiddleCenter; 
+            hintHLG.padding = new RectOffset(20, 50, 0, 0); // Increased right padding for breathing room
+            hintHLG.childAlignment = TextAnchor.MiddleLeft; 
             hintHLG.spacing = 15;
             hintHLG.childControlWidth = true; hintHLG.childForceExpandWidth = false;
 
@@ -1052,8 +1052,8 @@ namespace EscapeED.EditorHelper
             arrowContentRect.anchorMin = Vector2.zero; arrowContentRect.anchorMax = Vector2.one;
             arrowContentRect.sizeDelta = Vector2.zero;
             var arrowHLG = arrowContent.GetComponent<HorizontalLayoutGroup>();
-            arrowHLG.padding = new RectOffset(20, 20, 0, 0); // Explicit internal padding
-            arrowHLG.childAlignment = TextAnchor.MiddleCenter; 
+            arrowHLG.padding = new RectOffset(20, 50, 0, 0); // Increased right padding for breathing room
+            arrowHLG.childAlignment = TextAnchor.MiddleLeft; 
             arrowHLG.spacing = 15;
             arrowHLG.childControlWidth = true; arrowHLG.childForceExpandWidth = false;
 
