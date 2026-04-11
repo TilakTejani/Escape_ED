@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using System.Collections;
+using EscapeED.Audio;
 
 namespace EscapeED.UI
 {
@@ -46,6 +47,7 @@ namespace EscapeED.UI
 
             if (animate && gameObject.activeInHierarchy)
             {
+                AudioManager.Instance.PlayClick();
                 animateCoroutine = StartCoroutine(AnimateToggle(isOn));
             }
             else

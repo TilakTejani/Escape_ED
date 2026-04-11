@@ -5,6 +5,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.UI;
 using EscapeED.UI;
 using EscapeED.InputHandling;
+using EscapeED.Audio;
 
 namespace EscapeED.EditorHelper
 {
@@ -128,6 +129,13 @@ namespace EscapeED.EditorHelper
             // FINAL SYNC
             homeView.InitializeSync();
 
+            // 7. Ensure AudioManager exists
+            if (Object.FindAnyObjectByType<AudioManager>() == null)
+            {
+                GameObject audioManager = new GameObject("AudioManager", typeof(AudioManager));
+                Object.DontDestroyOnLoad(audioManager);
+            }
+
             Debug.Log("[UIAutoSetup] SUCCESS: Handshake complete. UI is now synchronized.");
         }
 
@@ -157,6 +165,7 @@ namespace EscapeED.EditorHelper
             // 4. Close Button "X" (Top Right)
             GameObject closeObj = CreateText(window.transform, "X", 55, new Color(0.4f, 0.4f, 0.4f), new Vector2(250, 350));
             view.closeButton = closeObj.AddComponent<Button>();
+            closeObj.AddComponent<UIButtonAudio>();
 
             // 5. Sound Row
             view.soundToggle = CreateToggle(window.transform, "Sound", new Vector2(0, 180));
@@ -261,6 +270,8 @@ namespace EscapeED.EditorHelper
             ColorBlock cb = btn.colors;
             cb.pressedColor = new Color(0, 0, 0, 0.1f);
             btn.colors = cb;
+            
+            btnObj.AddComponent<UIButtonAudio>();
 
             return btn;
         }
@@ -502,6 +513,7 @@ namespace EscapeED.EditorHelper
             playRect.sizeDelta = new Vector2(480, 160);
             playRect.anchoredPosition = new Vector2(0, -400);
             view.playButton = playBtnObj.GetComponent<Button>();
+            playBtnObj.AddComponent<UIButtonAudio>();
 
             // Layer 2: Glossy Face
             GameObject faceObj = new GameObject("FaceLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
@@ -584,6 +596,8 @@ namespace EscapeED.EditorHelper
             GameObject txtObj = CreateText(root.transform, label, 32, accent, new Vector2(0, -75));
             txtObj.GetComponent<Text>().fontStyle = FontStyle.Bold;
 
+            root.AddComponent<UIButtonAudio>();
+
             return root.GetComponent<Button>();
         }
 
@@ -607,6 +621,7 @@ namespace EscapeED.EditorHelper
             iImg.sprite = styledSprite;
             
             root.GetComponent<Button>().targetGraphic = iImg;
+            root.AddComponent<UIButtonAudio>();
 
             return root.GetComponent<Button>();
         }
@@ -672,6 +687,8 @@ namespace EscapeED.EditorHelper
                 Debug.LogWarning($"[UIAutoSetup] Failed to load icon at: {resourcePath}");
             }
 
+            obj.AddComponent<UIButtonAudio>();
+
             return obj;
         }
 
@@ -708,6 +725,8 @@ namespace EscapeED.EditorHelper
             btnObj.GetComponent<Image>().color = new Color(0.15f, 0.45f, 0.85f);
 
             CreateText(btnObj.transform, label, 45, Color.white, Vector2.zero);
+            
+            btnObj.AddComponent<UIButtonAudio>();
 
             return btnObj;
         }
@@ -721,6 +740,21 @@ namespace EscapeED.EditorHelper
                 cam.cullingMask |= (1 << uiLayer);
                 
                 Debug.Log($"[UIAutoSetup] Camera '{cam.name}' verified for UI rendering.");
+            }
+
+            // Ensure we have an AudioListener in the scene
+            if (Object.FindAnyObjectByType<AudioListener>() == null)
+            {
+                Camera main = Camera.main;
+                if (main != null)
+                {
+                    main.gameObject.AddComponent<AudioListener>();
+                    Debug.Log("[UIAutoSetup] Added AudioListener to Main Camera.");
+                }
+                else
+                {
+                    Debug.LogWarning("[UIAutoSetup] No Main Camera found to attach AudioListener!");
+                }
             }
         }
 

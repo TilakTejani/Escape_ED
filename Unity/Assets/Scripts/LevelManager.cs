@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using EscapeED.Audio;
 
 namespace EscapeED
 {
@@ -285,6 +286,7 @@ namespace EscapeED
             }
             else
             {
+                AudioManager.Instance.PlayArrowSound();
                 arrow.Eject();
                 activeArrows.Remove(arrow.gameObject);
 
