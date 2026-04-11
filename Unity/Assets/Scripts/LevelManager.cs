@@ -27,6 +27,7 @@ namespace EscapeED
         private TextAsset[]      allLevels    = null;
 
         private void OnEnable()
+        
         {
             GameStateManager.OnStateChanged += HandleStateChanged;
         }
