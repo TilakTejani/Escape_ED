@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using EscapeED.Audio;
 
 namespace EscapeED.UI
 {
@@ -27,28 +28,28 @@ namespace EscapeED.UI
             targetState = GameState.MainMenu; 
         }
 
-        // Dedicated late-init method to ensure buttons exist first (called by UIAutoSetup)
-        public void InitializeSync()
+        private void Start()
         {
-            if (playButton != null) 
-            {
-                playButton.onClick.RemoveAllListeners();
-                playButton.onClick.AddListener(OnPlayClicked);
-            }
-            if (settingsButton != null)
-            {
-                settingsButton.onClick.RemoveAllListeners();
-                settingsButton.onClick.AddListener(OnSettingsClicked);
-            }
-            if (shopButton != null)
-            {
-                shopButton.onClick.RemoveAllListeners();
-                shopButton.onClick.AddListener(OnShopClicked);
-            }
+            // PROPER RUNTIME WIRING: Standard AddListener is for runtime logic only
+            if (playButton != null) playButton.onClick.AddListener(OnPlayClicked);
+            if (settingsButton != null) settingsButton.onClick.AddListener(OnSettingsClicked);
+            if (shopButton != null) shopButton.onClick.AddListener(OnShopClicked);
+            if (homeButton != null) homeButton.onClick.AddListener(() => {
+                AudioManager.Instance.PlayClick();
+                Debug.Log("[HomeScreen] Home Clicked!");
+            });
+            if (collectionButton != null) collectionButton.onClick.AddListener(() => {
+                AudioManager.Instance.PlayClick();
+                Debug.Log("[HomeScreen] Collection Clicked!");
+            });
         }
+
+        // Keep for assignment, but logic happens in Start
+        public void InitializeSync() { }
 
         private void OnPlayClicked()
         {
+            AudioManager.Instance.PlayClick();
             GameStateManager gsm = GameStateManager.Instance;
             if (gsm == null) gsm = Object.FindAnyObjectByType<GameStateManager>();
 
@@ -60,6 +61,7 @@ namespace EscapeED.UI
 
         private void OnSettingsClicked()
         {
+            AudioManager.Instance.PlayClick();
             Debug.Log("[HomeScreen] Settings Clicked!");
             if (settingsView != null)
             {
@@ -69,6 +71,7 @@ namespace EscapeED.UI
 
         private void OnShopClicked()
         {
+            AudioManager.Instance.PlayClick();
             Debug.Log("[HomeScreen] Shop Clicked!");
         }
     }

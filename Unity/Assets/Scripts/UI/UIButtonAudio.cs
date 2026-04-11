@@ -7,7 +7,7 @@ namespace EscapeED.UI
     [RequireComponent(typeof(Button))]
     public class UIButtonAudio : MonoBehaviour
     {
-        private void Awake()
+        private void Start()
         {
             Button btn = GetComponent<Button>();
             btn.onClick.AddListener(PlaySound);

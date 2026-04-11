@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using EscapeED.Audio;
 
 namespace EscapeED.UI
 {
@@ -17,26 +18,29 @@ namespace EscapeED.UI
             base.Awake();
         }
 
-        public void InitializeSync()
+        private void Start()
         {
             if (closeButton != null)
             {
-                closeButton.onClick.RemoveAllListeners();
-                closeButton.onClick.AddListener(Hide);
+                closeButton.onClick.AddListener(() => {
+                    AudioManager.Instance.PlayClick();
+                    Hide();
+                });
             }
 
             if (soundToggle != null)
             {
-                soundToggle.onValueChanged.RemoveAllListeners();
                 soundToggle.onValueChanged.AddListener(OnSoundChanged);
             }
 
             if (vibeToggle != null)
             {
-                vibeToggle.onValueChanged.RemoveAllListeners();
                 vibeToggle.onValueChanged.AddListener(OnVibeChanged);
             }
         }
+
+        // Keep for assignment, logic is in Start
+        public void InitializeSync() { }
 
         private void OnSoundChanged(bool isOn)
         {

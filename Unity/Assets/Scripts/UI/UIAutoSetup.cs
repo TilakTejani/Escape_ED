@@ -126,9 +126,6 @@ namespace EscapeED.EditorHelper
             BaseUIPanel[] allPanels = new BaseUIPanel[] { splashView, homeView };
             uiManager.Initialize(allPanels);
 
-            // FINAL SYNC
-            homeView.InitializeSync();
-
             // 7. Ensure AudioManager exists
             if (Object.FindAnyObjectByType<AudioManager>() == null)
             {
@@ -165,8 +162,7 @@ namespace EscapeED.EditorHelper
             // 4. Close Button "X" (Top Right)
             GameObject closeObj = CreateText(window.transform, "X", 55, new Color(0.4f, 0.4f, 0.4f), new Vector2(250, 350));
             view.closeButton = closeObj.AddComponent<Button>();
-            closeObj.AddComponent<UIButtonAudio>();
-
+            
             // 5. Sound Row
             view.soundToggle = CreateToggle(window.transform, "Sound", new Vector2(0, 180));
             
@@ -513,7 +509,6 @@ namespace EscapeED.EditorHelper
             playRect.sizeDelta = new Vector2(480, 160);
             playRect.anchoredPosition = new Vector2(0, -400);
             view.playButton = playBtnObj.GetComponent<Button>();
-            playBtnObj.AddComponent<UIButtonAudio>();
 
             // Layer 2: Glossy Face
             GameObject faceObj = new GameObject("FaceLayer", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
