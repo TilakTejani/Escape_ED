@@ -20,11 +20,9 @@ export type EditorMode = 'add' | 'select' | 'test'
 export type Difficulty = 'easy' | 'medium' | 'hard'
 
 export interface CubeGeometry {
-  vertices: [number, number, number][] // World positions for rendering
-  gridCoords: [number, number, number][] // Integer positions for logic (x, y, z)
+  vertices: [number, number, number][]
   edges: [number, number][]
-  posMap: Map<string, number> // Map of "x,y,z" string to vertex index
-  adjSet: Set<string>          // "min-max" edge keys for O(1) adjacency lookup
+  adjSet: Set<string> // "min-max" edge keys for O(1) adjacency lookup
 }
 
 export interface SavedLevel {

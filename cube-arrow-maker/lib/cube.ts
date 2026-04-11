@@ -1,177 +1,110 @@
 import { Arrow, CubeGeometry } from '@/types'
 
-export function gridKey(x: number, y: number, z: number): string {
-  return `${x},${y},${z}`
-}
+export const worldKey = (x: number, y: number, z: number) => `${x.toFixed(2)},${y.toFixed(2)},${z.toFixed(2)}`
 
-// Generate geometry for an nx×ny×nz grid — SURFACE ONLY.
 export function generateCubeGeometry(nx: number, ny: number, nz: number): CubeGeometry {
-  const sx = 1.0
-  const sy = 1.0
-  const sz = 1.0
-
-  const centerX = (nx - 1) / 2
-  const centerY = (ny - 1) / 2
-  const centerZ = (nz - 1) / 2
-
-  const isSurface = (x: number, y: number, z: number) =>
-    x === 0 || x === nx - 1 || y === 0 || y === ny - 1 || z === 0 || z === nz - 1
-
-  const posMap = new Map<string, number>()
   const vertices: [number, number, number][] = []
-  const gridCoords: [number, number, number][] = []
+  
+  const posMap = new Map<string, number>()
+  
+  const addVertex = (x: number, y: number, z: number) => {
+    const idx = vertices.length;
+    vertices.push([x, y, z])
+    posMap.set(worldKey(x, y, z), idx)
+    return idx
+  }
 
-  // 1. Generate Surface Vertices
-  for (let z = 0; z < nz; z++) {
-    for (let y = 0; y < ny; y++) {
-      for (let x = 0; x < nx; x++) {
-        if (isSurface(x, y, z)) {
-          const idx = vertices.length
-          posMap.set(gridKey(x, y, z), idx)
-          vertices.push([x - centerX, y - centerY, z - centerZ])
-          gridCoords.push([x, y, z])
-        }
-      }
+  const Rx = nx / 2;
+  const Ry = ny / 2;
+  const Rz = nz / 2;
+
+  // Front (+Z) & Back (-Z)
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+        const c_x = i - (nx - 1) / 2;
+        const c_y = j - (ny - 1) / 2;
+        addVertex(c_x, c_y, Rz);  // Front
+        addVertex(-c_x, c_y, -Rz); // Back
     }
   }
 
-  // 2. Generate Edges between adjacent surface vertices
+  // Top (+Y) & Bottom (-Y)
+  for (let j = 0; j < nz; j++) {
+    for (let i = 0; i < nx; i++) {
+        const c_x = i - (nx - 1) / 2;
+        const c_z = j - (nz - 1) / 2;
+        addVertex(c_x, Ry, -c_z); // Top
+        addVertex(c_x, -Ry, c_z); // Bottom
+    }
+  }
+
+  // Right (+X) & Left (-X)
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nz; i++) {
+        const c_z = i - (nz - 1) / 2;
+        const c_y = j - (ny - 1) / 2;
+        addVertex(Rx, c_y, -c_z); // Right
+        addVertex(-Rx, c_y, c_z); // Left
+    }
+  }
+
   const edges: [number, number][] = []
-  for (let z = 0; z < nz; z++) {
-    for (let y = 0; y < ny; y++) {
-      for (let x = 0; x < nx; x++) {
-        if (!isSurface(x, y, z)) continue
-        const a = posMap.get(gridKey(x, y, z))!
-        
-        // Check 3 directions for neighbors
-        if (x < nx - 1 && isSurface(x + 1, y, z))
-          edges.push([a, posMap.get(gridKey(x + 1, y, z))!])
-        if (y < ny - 1 && isSurface(x, y + 1, z))
-          edges.push([a, posMap.get(gridKey(x, y + 1, z))!])
-        if (z < nz - 1 && isSurface(x, y, z + 1))
-          edges.push([a, posMap.get(gridKey(x, y, z + 1))!])
-      }
+  const adjSet = new Set<string>()
+  
+  const addEdge = (a: number, b: number) => {
+    const key = a < b ? `${a}-${b}` : `${b}-${a}`
+    if (!adjSet.has(key)) {
+      edges.push([a, b])
+      adjSet.add(key)
     }
   }
 
-  // Build adjacency set for O(1) lookup
-  const adjSet = new Set<string>()
-  for (let i = 0; i < edges.length; i++) {
-    const [a, b] = edges[i]
-    adjSet.add(edgeKey(a, b))
+  // O(V) edge generation: each vertex checks its 6 unit-offset neighbors via posMap.
+  // posMap is already fully populated, so each lookup is O(1).
+  const OFFSETS: [number, number, number][] = [
+    [1, 0, 0], [-1, 0, 0],
+    [0, 1, 0], [0, -1, 0],
+    [0, 0, 1], [0, 0, -1],
+  ]
+  for (let i = 0; i < vertices.length; i++) {
+    const [x, y, z] = vertices[i]
+    for (let o = 0; o < OFFSETS.length; o++) {
+      const [dx, dy, dz] = OFFSETS[o]
+      const j = posMap.get(worldKey(x + dx, y + dy, z + dz))
+      if (j !== undefined && j > i) addEdge(i, j)
+    }
   }
 
-  return { vertices, gridCoords, edges, posMap, adjSet }
+  return { vertices, edges, adjSet }
 }
 
-export function areAdjacent(edgesOrAdjSet: [number, number][] | Set<string>, v1: number, v2: number): boolean {
-  if (edgesOrAdjSet instanceof Set) {
-    return edgesOrAdjSet.has(edgeKey(v1, v2))
-  }
-  for (let i = 0; i < edgesOrAdjSet.length; i++) {
-    const [a, b] = edgesOrAdjSet[i]
-    if ((a === v1 && b === v2) || (a === v2 && b === v1)) return true
-  }
-  return false
+export function areAdjacent(adjSet: Set<string>, v1: number, v2: number): boolean {
+  return adjSet.has(edgeKey(v1, v2))
 }
 
 export function edgeKey(v1: number, v2: number): string {
   return v1 < v2 ? `${v1}-${v2}` : `${v2}-${v1}`
 }
 
-// Get the normalised exit direction of an arrow
-export function getExitDirection(
-  vertices: [number, number, number][],
-  path: number[],
-  headEnd: 'start' | 'end'
-): [number, number, number] {
-  if (path.length < 2) return [0, 0, 0]
-  const [v1, v2] =
-    headEnd === 'end'
-      ? [path[path.length - 2], path[path.length - 1]]
-      : [path[1], path[0]]
-  const [x1, y1, z1] = vertices[v1]
-  const [x2, y2, z2] = vertices[v2]
-  const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1
-  const len = Math.sqrt(dx * dx + dy * dy + dz * dz)
-  return [dx / len, dy / len, dz / len]
+export function getNeighbors(edges: [number, number][], vertex: number): number[] {
+  const neighbors: number[] = []
+  for (let i = 0; i < edges.length; i++) {
+    const [a, b] = edges[i]
+    if (a === vertex) neighbors.push(b)
+    else if (b === vertex) neighbors.push(a)
+  }
+  return neighbors
 }
 
-// Check if an arrow can exit — walks the full exit path until leaving the cube.
-export function canArrowExit(
-  arrowId: string,
-  arrows: Arrow[],
-  geometry: CubeGeometry,
-  gridSize: { x: number, y: number, z: number }
-): boolean {
-  const { gridCoords, posMap } = geometry
-  let arrow: Arrow | undefined
+export function getOccupiedVertices(arrows: Arrow[]): Set<number> {
+  const occupied = new Set<number>()
   for (let i = 0; i < arrows.length; i++) {
-    if (arrows[i].id === arrowId) {
-      arrow = arrows[i]
-      break
-    }
+    const path = arrows[i].path
+    for (let j = 0; j < path.length; j++) occupied.add(path[j])
   }
-  if (!arrow || arrow.path.length < 2) return true
-
-  // Derive the grid step vector from integer coordinates
-  const [tailV, headV] =
-    arrow.headEnd === 'end'
-      ? [arrow.path[arrow.path.length - 2], arrow.path[arrow.path.length - 1]]
-      : [arrow.path[1], arrow.path[0]]
-
-  const [tx, ty, tz] = gridCoords[tailV]
-  const [hx, hy, hz] = gridCoords[headV]
-  const dx = hx - tx, dy = hy - ty, dz = hz - tz
-
-  let cx = hx, cy = hy, cz = hz
-  let prevV = headV
-
-  const ownVerts = new Set(arrow.path)
-
-  while (true) {
-    cx += dx; cy += dy; cz += dz
-
-    // 1. Boundary Check: Out of volume -> SUCCESS
-    if (cx < 0 || cx >= gridSize.x || cy < 0 || cy >= gridSize.y || cz < 0 || cz >= gridSize.z) {
-      return true
-    }
-
-    // 2. Vertex Check: Surface node exists?
-    const nextVertex = posMap.get(gridKey(cx, cy, cz))
-    
-    // 3. Core Check: Inside volume but no node? -> BLOCKED BY SOLID CORE
-    if (nextVertex === undefined) {
-      return false
-    }
-
-    // 4. Collision Check: Arrow body obstruction
-    if (ownVerts.has(nextVertex)) return false
-    
-    for (let i = 0; i < arrows.length; i++) {
-      const other = arrows[i]
-      if (other.id === arrowId) continue
-      
-      const p = other.path
-      // Body check
-      for (let j = 0; j < p.length; j++) {
-        if (p[j] === nextVertex) return false
-      }
-      
-      // Edge check
-      for (let j = 0; j < p.length - 1; j++) {
-        const u = p[j], v = p[j+1]
-        if ((u === prevV && v === nextVertex) || (v === prevV && u === nextVertex)) {
-          return false
-        }
-      }
-    }
-
-    prevV = nextVertex
-  }
+  return occupied
 }
 
-// All edges occupied by the given arrows
 export function getOccupiedEdges(arrows: Arrow[]): Set<string> {
   const occupied = new Set<string>()
   for (let j = 0; j < arrows.length; j++) {
@@ -183,43 +116,182 @@ export function getOccupiedEdges(arrows: Arrow[]): Set<string> {
   return occupied
 }
 
-// Walk an arrow's exit path and return every vertex index it passes through
+// Get the geometrically straight next step across the faces.
+// Solves 90-degree corner wrapping perfectly by selecting the highest positive dot product!
+export function getNextStraightVertex(u: number, v: number, vertices: [number,number,number][], edges: [number,number][]): number | null {
+   const [ux, uy, uz] = vertices[u]
+   const [vx, vy, vz] = vertices[v]
+   const dirX = vx - ux, dirY = vy - uy, dirZ = vz - uz
+   
+   let bestNext = -1;
+   let maxDot = -999;
+   
+   const neighbors = getNeighbors(edges, v);
+   for (let i = 0; i < neighbors.length; i++) {
+      const w = neighbors[i]
+      if (w === u) continue; 
+      
+      const [wx, wy, wz] = vertices[w]
+      const dx = wx - vx, dy = wy - vy, dz = wz - vz
+      
+      const dot = dirX * dx + dirY * dy + dirZ * dz
+      if (dot > maxDot) {
+          maxDot = dot;
+          bestNext = w;
+      }
+   }
+   
+   if (maxDot > 0.1) return bestNext;
+   return null;
+}
+
+export function getExitDirection(
+  vertices: [number, number, number][],
+  path: number[],
+  headEnd: 'start' | 'end',
+  _edges: [number, number][]
+): [number, number, number] {
+  if (path.length < 2) return [0, 0, 0]
+  const [v1, v2] =
+    headEnd === 'end'
+      ? [path[path.length - 2], path[path.length - 1]]
+      : [path[1], path[0]]
+      
+  const [nx, ny, nz] = vertices[v1]   // Neck
+  const [hx, hy, hz] = vertices[v2]   // Head
+  
+  let dx = hx - nx
+  let dy = hy - ny
+  let dz = hz - nz
+  
+  // Find the exact normal of the face the Head sits on.
+  // Because tiles are flat on faces, exactly ONE coordinate corresponds to the cube radius R.
+  // All other coordinates are strictly less than R (maximum R - 0.5).
+  const ax = Math.abs(hx)
+  const ay = Math.abs(hy)
+  const az = Math.abs(hz)
+  
+  if (ax > ay && ax > az) {
+      dx = 0; // Project onto YZ plane
+  } else if (ay > ax && ay > az) {
+      dy = 0; // Project onto XZ plane
+  } else {
+      dz = 0; // Project onto XY plane
+  }
+  
+  const len = Math.sqrt(dx * dx + dy * dy + dz * dz)
+  if (len < 0.0001) return [0, 0, 1] 
+  return [dx / len, dy / len, dz / len]
+}
+
+function getFaceNormalAxis(vx: number, vy: number, vz: number): 'x' | 'y' | 'z' {
+  const ax = Math.abs(vx), ay = Math.abs(vy), az = Math.abs(vz)
+  if (ax > ay && ax > az) return 'x'
+  if (ay > ax && ay > az) return 'y'
+  return 'z'
+}
+
 export function exitPathVertices(
   arrow: Arrow,
   geometry: CubeGeometry,
   gridSize: { x: number, y: number, z: number }
 ): number[] {
-  const { gridCoords, posMap } = geometry
+  const { vertices, edges } = geometry
   if (arrow.path.length < 2) return []
+  
   const [tailV, headV] =
     arrow.headEnd === 'end'
       ? [arrow.path[arrow.path.length - 2], arrow.path[arrow.path.length - 1]]
       : [arrow.path[1], arrow.path[0]]
 
-  const [tx, ty, tz] = gridCoords[tailV]
-  const [hx, hy, hz] = gridCoords[headV]
-  const dx = hx - tx, dy = hy - ty, dz = hz - tz
-  
-  let cx = hx, cy = hy, cz = hz
   const result: number[] = []
   
-  while (true) {
-    cx += dx; cy += dy; cz += dz
+  let u = tailV
+  let v = headV
+  
+  let steps = 0
+  const limit = Math.max(gridSize.x, gridSize.y, gridSize.z) + 1
+  while (steps < limit) {
+    const nextV = getNextStraightVertex(u, v, vertices, edges)
+    if (nextV === null) break
     
-    // Boundary check
-    if (cx < 0 || cx >= gridSize.x || cy < 0 || cy >= gridSize.y || cz < 0 || cz >= gridSize.z) {
-      break
-    }
+    const [vx, vy, vz] = vertices[v]
+    const [nx, ny, nz] = vertices[nextV]
     
-    const next = posMap.get(gridKey(cx, cy, cz))
-    if (next === undefined) break // Blocked by core or no node
+    const vAxis = getFaceNormalAxis(vx, vy, vz)
+    const nextAxis = getFaceNormalAxis(nx, ny, nz)
     
-    result.push(next)
+    // Fly-Off Mechanic: If the arrow moves onto a different face, it has flown off the edge into 3D space!
+    if (vAxis !== nextAxis) break
+    
+    result.push(nextV)
+    u = v
+    v = nextV
+    steps++
   }
+  
   return result
 }
 
-// Returns true if the arrow's own exit path re-enters any vertex of its own path
+export function canArrowExit(
+  arrowId: string,
+  arrows: Arrow[],
+  geometry: CubeGeometry,
+  gridSize: { x: number, y: number, z: number }
+): boolean {
+  let arrow: Arrow | undefined
+  for (let i = 0; i < arrows.length; i++) {
+    if (arrows[i].id === arrowId) {
+      arrow = arrows[i]
+      break
+    }
+  }
+  if (!arrow || arrow.path.length < 2) return true
+  
+  const path = exitPathVertices(arrow, geometry, gridSize)
+
+  let prevV = arrow.headEnd === 'end' ? arrow.path[arrow.path.length-1] : arrow.path[0]
+  
+  for (let k = 0; k < path.length; k++) {
+      const nextVertex = path[k]
+      
+      // Collision Check: Self (Snake-like slithering rules)
+      // An arrow only collides with itself if its head steps onto a stationary part of its body that hasn't slithered out of the way yet.
+      const stepDistance = k + 1
+      const originalPath = arrow.headEnd === 'end' ? [...arrow.path].reverse() : arrow.path
+      
+      // Node self-collision
+      for (let s = 0; s < originalPath.length - stepDistance; s++) {
+        if (originalPath[s] === nextVertex) return false
+      }
+      
+      // Edge self-collision (cannot cross its own body's current segments)
+      for (let s = 0; s < originalPath.length - stepDistance - 1; s++) {
+        const a = originalPath[s], b = originalPath[s+1]
+        if ((a === prevV && b === nextVertex) || (b === prevV && a === nextVertex)) return false
+      }
+      
+      // Collision Check: Others
+      for (let i = 0; i < arrows.length; i++) {
+        const other = arrows[i]
+        if (other.id === arrowId) continue
+        
+        const p = other.path
+        for (let j = 0; j < p.length; j++) {
+          if (p[j] === nextVertex) return false
+        }
+        
+        for (let j = 0; j < p.length - 1; j++) {
+          const a = p[j], b = p[j+1]
+          if ((a === prevV && b === nextVertex) || (b === prevV && a === nextVertex)) return false
+        }
+      }
+      prevV = nextVertex
+  }
+  
+  return true
+}
+
 export function arrowPointsAtItself(
   arrow: Arrow,
   geometry: CubeGeometry,
@@ -233,7 +305,6 @@ export function arrowPointsAtItself(
   return false
 }
 
-// Returns true if a1's head is on a2's exit path AND a2's head is on a1's exit path
 export function arrowsDirectlyFacing(
   a1: Arrow,
   a2: Arrow,
@@ -253,15 +324,4 @@ export function arrowsDirectlyFacing(
   for (let i = 0; i < exit2.length; i++) if (exit2[i] === head1) head1OnExit2 = true
   
   return head2OnExit1 && head1OnExit2
-}
-
-// Vertices directly connected to a given vertex
-export function getNeighbors(edges: [number, number][], vertex: number): number[] {
-  const neighbors: number[] = []
-  for (let i = 0; i < edges.length; i++) {
-    const [a, b] = edges[i]
-    if (a === vertex) neighbors.push(b)
-    else if (b === vertex) neighbors.push(a)
-  }
-  return neighbors
 }

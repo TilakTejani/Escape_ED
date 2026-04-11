@@ -15,7 +15,7 @@ namespace EscapeED
         [Tooltip("Automatically calculate spacing and dotRadius relative to Arrow width.")]
         public bool debugLog = true; 
         public bool  autoScale      = true;
-        public float spacingMult    = 3.25f;
+        public float spacingMult    = 1.25f;
         public float dotRadiusMult  = 0.5f;
         public float arrowHeadBaseMult = 2.5f; 
         
@@ -33,6 +33,8 @@ namespace EscapeED
         private Dictionary<Vector3Int, GameObject> dots         = new Dictionary<Vector3Int, GameObject>();
         private List<GameObject>                   indexedDots  = new List<GameObject>();
         private List<Vector3Int>                   indexedCoords = new List<Vector3Int>();
+        private List<Vector3>                      indexedWorldPositions = new List<Vector3>();
+        private List<Vector3>                      indexedNormals = new List<Vector3>();
         private GameObject                         backgroundCube;
         private List<GameObject>                   visualFaces  = new List<GameObject>();
         private List<GameObject>                   edgeObjects  = new List<GameObject>();
@@ -102,22 +104,64 @@ namespace EscapeED
             dots.Clear();
             indexedDots.Clear();
             indexedCoords.Clear();
+            indexedWorldPositions.Clear();
+            indexedNormals.Clear();
 
-            for (int z = 0; z < size.z; z++)
-            {
-                for (int y = 0; y < size.y; y++)
-                {
-                    for (int x = 0; x < size.x; x++)
-                    {
-                        if (!IsSurface(x, y, z)) continue;
-                        Vector3Int gridPos  = new Vector3Int(x, y, z);
-                        dots[gridPos] = null;
-                        indexedDots.Add(null);
-                        indexedCoords.Add(gridPos);
+            float centerX = size.x / 2f;
+            float centerY = size.y / 2f;
+            float centerZ = size.z / 2f;
+
+            // REPLICATE WEB ORDER: Front, Back, Right, Left, Top, Bottom
+            
+            // 0: Front (+Z), 1: Back (-Z)
+            for (int face = 0; face < 2; face++) {
+                bool isFront = face == 0;
+                float zPos = isFront ? centerZ : -centerZ;
+                Vector3 normal = isFront ? Vector3.forward : Vector3.back;
+                for (int y = 0; y < size.y; y++) {
+                    for (int x = 0; x < size.x; x++) {
+                        AddNode(new Vector3Int(x, y, isFront ? size.z - 1 : 0), 
+                               new Vector3(x + 0.5f - centerX, y + 0.5f - centerY, zPos), normal);
                     }
                 }
             }
-            Debug.Log($"Generated {indexedDots.Count} surface dots.");
+
+            // 2: Right (+X), 3: Left (-X)
+            for (int face = 2; face < 4; face++) {
+                bool isRight = face == 2;
+                float xPos = isRight ? centerX : -centerX;
+                Vector3 normal = isRight ? Vector3.right : Vector3.left;
+                for (int y = 0; y < size.y; y++) {
+                    for (int z = 0; z < size.z; z++) {
+                        AddNode(new Vector3Int(isRight ? size.x - 1 : 0, y, z), 
+                               new Vector3(xPos, y + 0.5f - centerY, z + 0.5f - centerZ), normal);
+                    }
+                }
+            }
+
+            // 4: Top (+Y), 5: Bottom (-Y)
+            for (int face = 4; face < 6; face++) {
+                bool isTop = face == 4;
+                float yPos = isTop ? centerY : -centerY;
+                Vector3 normal = isTop ? Vector3.up : Vector3.down;
+                for (int z = 0; z < size.z; z++) {
+                    for (int x = 0; x < size.x; x++) {
+                        AddNode(new Vector3Int(x, isTop ? size.y - 1 : 0, z), 
+                               new Vector3(x + 0.5f - centerX, yPos, z + 0.5f - centerZ), normal);
+                    }
+                }
+            }
+
+            Debug.Log($"Generated {indexedDots.Count} face-centered nodes across 6 surfaces.");
+        }
+
+        private void AddNode(Vector3Int gridPos, Vector3 worldPos, Vector3 normal)
+        {
+            indexedDots.Add(null);
+            indexedCoords.Add(gridPos);
+            indexedWorldPositions.Add(worldPos * spacing);
+            indexedNormals.Add(normal);
+            // We don't use 'dots' dictionary for indexing anymore since coords are not unique
         }
 
         private void ApplyMasterScale()
@@ -145,10 +189,9 @@ namespace EscapeED
 
         public Vector3 GetWorldPosByIndex(int index)
         {
-            if (index >= 0 && index < indexedCoords.Count)
+            if (index >= 0 && index < indexedWorldPositions.Count)
             {
-                Vector3Int p = indexedCoords[index];
-                return transform.TransformPoint(CalculateWorldPos(p.x, p.y, p.z));
+                return transform.TransformPoint(indexedWorldPositions[index]);
             }
             return Vector3.zero;
         }
@@ -248,7 +291,7 @@ namespace EscapeED
 
             visualFaces.Clear();
             Vector3[] normals = { Vector3.up, Vector3.down, Vector3.left, Vector3.right, Vector3.forward, Vector3.back };
-            Vector3 cubeDim = (Vector3)(size - Vector3Int.one) * spacing;
+            Vector3 cubeDim = (Vector3)size * spacing;
 
             foreach (var n in normals)
             {
@@ -356,14 +399,9 @@ namespace EscapeED
             return null;
         }
 
-        public Vector3 GetSurfaceNormal(Vector3Int p)
+        public Vector3 GetSurfaceNormal(int index)
         {
-            if (p.x == 0)          return Vector3.left;
-            if (p.x == size.x - 1) return Vector3.right;
-            if (p.y == 0)          return Vector3.down;
-            if (p.y == size.y - 1) return Vector3.up;
-            if (p.z == 0)          return Vector3.back;
-            if (p.z == size.z - 1) return Vector3.forward;
+            if (index >= 0 && index < indexedNormals.Count) return indexedNormals[index];
             return Vector3.up;
         }
 
@@ -376,11 +414,35 @@ namespace EscapeED
 
         public Vector3 CalculateWorldPos(int x, int y, int z)
         {
-            return new Vector3(
-                x - (size.x - 1) / 2f,
-                y - (size.y - 1) / 2f,
-                z - (size.z - 1) / 2f
-            ) * spacing;
+            float centerX = size.x / 2f;
+            float centerY = size.y / 2f;
+            float centerZ = size.z / 2f;
+
+            // Start with true centroid
+            float px = (x + 0.5f) - centerX;
+            float py = (y + 0.5f) - centerY;
+            float pz = (z + 0.5f) - centerZ;
+
+            // Project only the axis defining the surface to the boundary
+            if (x == 0) px = -centerX;
+            else if (x == size.x - 1) px = centerX;
+
+            if (y == 0) py = -centerY;
+            else if (y == size.y - 1) py = centerY;
+
+            if (z == 0) pz = -centerZ;
+            else if (z == size.z - 1) pz = centerZ;
+
+            return new Vector3(px, py, pz) * spacing;
+        }
+
+        public int GetIndexByCoords(Vector3Int p)
+        {
+            for (int i = 0; i < indexedCoords.Count; i++)
+            {
+                if (indexedCoords[i] == p) return i;
+            }
+            return -1;
         }
 
         private void ClearDots()

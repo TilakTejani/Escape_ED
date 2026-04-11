@@ -75,8 +75,8 @@ export default function GridSizePanel() {
       let lastDir: [number, number, number] | null = null
       for (let i = 1; i < arrow.path.length; i++) {
         const [u, v] = [arrow.path[i-1], arrow.path[i]]
-        const [ux, uy, uz] = geometry.gridCoords[u]
-        const [vx, vy, vz] = geometry.gridCoords[v]
+        const [ux, uy, uz] = geometry.vertices[u]
+        const [vx, vy, vz] = geometry.vertices[v]
         const dir: [number, number, number] = [vx - ux, vy - uy, vz - uz]
         if (lastDir && (dir[0] !== lastDir[0] || dir[1] !== lastDir[1] || dir[2] !== lastDir[2])) {
           totalTurns++

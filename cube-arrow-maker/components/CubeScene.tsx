@@ -113,6 +113,40 @@ function VertexDot({
   )
 }
 
+// ─── Corner Routing Util ──────────────────────────────────────────────
+function getRenderPoints(points: THREE.Vector3[], gridSize: { x: number, y: number, z: number }): THREE.Vector3[] {
+  const out: THREE.Vector3[] = [];
+  const Rx = gridSize.x / 2;
+  const Ry = gridSize.y / 2;
+  const Rz = gridSize.z / 2;
+  
+  for (let i = 0; i < points.length; i++) {
+      const p = points[i]
+      if (i > 0) {
+          const prev = points[i-1];
+          const n1 = new THREE.Vector3();
+          if (Math.abs(prev.x) > Rx - 0.01) n1.x = Math.sign(prev.x);
+          else if (Math.abs(prev.y) > Ry - 0.01) n1.y = Math.sign(prev.y);
+          else if (Math.abs(prev.z) > Rz - 0.01) n1.z = Math.sign(prev.z);
+
+          const n2 = new THREE.Vector3();
+          if (Math.abs(p.x) > Rx - 0.01) n2.x = Math.sign(p.x);
+          else if (Math.abs(p.y) > Ry - 0.01) n2.y = Math.sign(p.y);
+          else if (Math.abs(p.z) > Rz - 0.01) n2.z = Math.sign(p.z);
+
+          if (!n1.equals(n2) && n1.length() > 0 && n2.length() > 0) {
+              out.push(new THREE.Vector3(
+                  n1.x !== 0 ? prev.x : p.x,
+                  n1.y !== 0 ? prev.y : p.y,
+                  n1.z !== 0 ? prev.z : p.z
+              ));
+          }
+      }
+      out.push(p);
+  }
+  return out;
+}
+
 // ─── Edge line ─────────────────────────────────────────────────────────────────
 function EdgeLine({
   start,
@@ -129,7 +163,7 @@ function EdgeLine({
   isInPending: boolean
   isOccupied: boolean
 }) {
-  const { mode, pendingPath, addVertexToPending } = useLevelStore()
+  const { mode, pendingPath, addVertexToPending, gridSize } = useLevelStore()
   const [hovered, setHovered] = useState(false)
   const { onDown, isClick } = useDragGuard()
 
@@ -157,10 +191,12 @@ function EdgeLine({
   const by = Math.max(Math.abs(end[1] - start[1]), 0.18)
   const bz = Math.max(Math.abs(end[2] - start[2]), 0.18)
 
+  const renderPoints = getRenderPoints([new THREE.Vector3(...start), new THREE.Vector3(...end)], gridSize)
+
   return (
     <group>
       <Line
-        points={[start, end]}
+        points={renderPoints}
         color={lineColor}
         lineWidth={isInPending ? 3 : hovered && isClickable ? 2 : 1.5}
       />
@@ -193,7 +229,7 @@ function ArrowMesh({ arrow, isRemoved }: { arrow: Arrow; isRemoved: boolean }) {
   const [hovered, setHovered] = useState(false)
   const { onDown, isClick } = useDragGuard()
 
-  const { vertices } = geometry
+  const { vertices, edges } = geometry
 
   if (isRemoved) return null
 
@@ -203,13 +239,13 @@ function ArrowMesh({ arrow, isRemoved }: { arrow: Arrow; isRemoved: boolean }) {
   const remaining = arrows.filter((a) => !removedInTest.includes(a.id))
   const canExit = isTestMode ? canArrowExit(arrow.id, remaining, geometry, gridSize) : true
 
-  const points = arrow.path.map((vi) => new THREE.Vector3(...vertices[vi]))
+  const points = getRenderPoints(arrow.path.map((vi) => new THREE.Vector3(...vertices[vi])), gridSize)
 
   const headVertex = arrow.headEnd === 'end'
     ? arrow.path[arrow.path.length - 1]
     : arrow.path[0]
   const headPos = new THREE.Vector3(...vertices[headVertex])
-  const dir = getExitDirection(vertices, arrow.path, arrow.headEnd)
+  const dir = getExitDirection(vertices, arrow.path, arrow.headEnd, edges)
 
   const coneH = 0.12
   const coneR = 0.05
@@ -309,9 +345,9 @@ function ArrowMesh({ arrow, isRemoved }: { arrow: Arrow; isRemoved: boolean }) {
 
 // ─── Cube faces ────────────────────────────────────────────────────────────────
 function CubeFaces({ gridSize }: { gridSize: { x: number, y: number, z: number } }) {
-  const dx = gridSize.x - 1
-  const dy = gridSize.y - 1
-  const dz = gridSize.z - 1
+  const dx = gridSize.x
+  const dy = gridSize.y
+  const dz = gridSize.z
 
   const faces: { pos: [number, number, number]; rot: [number, number, number]; size: [number, number] }[] = [
     { pos: [0, 0, dz / 2], rot: [0, 0, 0], size: [dx, dy] },               // front  +Z

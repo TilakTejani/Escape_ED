@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { Arrow, Level, EditorMode, GridSize, Difficulty, CubeGeometry, SavedLevel } from '@/types'
-import { areAdjacent, arrowsDirectlyFacing, arrowPointsAtItself, canArrowExit, edgeKey, generateCubeGeometry, getOccupiedEdges } from '@/lib/cube'
+import { areAdjacent, arrowsDirectlyFacing, arrowPointsAtItself, canArrowExit, edgeKey, generateCubeGeometry, getExitDirection, getOccupiedEdges, getOccupiedVertices } from '@/lib/cube'
 import { autoGenerateLevel } from '@/lib/generator'
 import { v4 as uuid } from 'uuid'
 
@@ -33,8 +33,9 @@ interface LevelStore {
 
   // Cached geometry — recomputed only when gridSize changes
   geometry: CubeGeometry
-  // Cached occupied edges — recomputed only when arrows change
+  // Cached occupied edges and vertices — recomputed only when arrows change
   occupiedEdges: Set<string>
+  occupiedVertices: Set<number>
 
   // "Add" mode: building a path
   pendingPath: number[]
@@ -103,6 +104,7 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
 
   geometry: initialGeometry,
   occupiedEdges: new Set<string>(),
+  occupiedVertices: new Set<number>(),
 
   savedLevels: loadSavedLevels(),
   currentLevelId: null,
@@ -110,7 +112,7 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
 
   setGridSize: (g) => {
     const geometry = generateCubeGeometry(g.x, g.y, g.z)
-    set({ gridSize: g, arrows: [], pendingPath: [], selectedArrowId: null, geometry, occupiedEdges: new Set() })
+    set({ gridSize: g, arrows: [], pendingPath: [], selectedArrowId: null, geometry, occupiedEdges: new Set(), occupiedVertices: new Set() })
   },
 
   setMode: (mode) => set({
@@ -126,8 +128,7 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
   toggleHideBlocked: () => set((s) => ({ hideBlocked: !s.hideBlocked })),
 
   addVertexToPending: (vertexIndex) => {
-    const { pendingPath, arrows, geometry, occupiedEdges } = get()
-    const occupiedVertices = new Set(arrows.flatMap((a) => a.path))
+    const { pendingPath, geometry, occupiedEdges, occupiedVertices } = get()
 
     if (pendingPath.length === 0) {
       if (occupiedVertices.has(vertexIndex)) return
@@ -153,16 +154,10 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
   setPendingHeadEnd: (end) => set({ pendingHeadEnd: end }),
 
   confirmArrow: () => {
-    const { pendingPath, pendingHeadEnd, arrows, gridSize, geometry, occupiedEdges } = get()
+    const { pendingPath, pendingHeadEnd, arrows, gridSize, geometry, occupiedEdges, occupiedVertices } = get()
     if (pendingPath.length < 2) return
 
-    const { gridCoords } = geometry
-    const [tailV, headV] = pendingHeadEnd === 'end'
-      ? [pendingPath[pendingPath.length - 2], pendingPath[pendingPath.length - 1]]
-      : [pendingPath[1], pendingPath[0]]
-    const [tx, ty, tz] = gridCoords[tailV]
-    const [hx, hy, hz] = gridCoords[headV]
-    const headDir: [number, number, number] = [hx - tx, hy - ty, hz - tz]
+    const headDir = getExitDirection(geometry.vertices, pendingPath, pendingHeadEnd, geometry.edges)
     const newArrow: Arrow = { id: uuid(), path: pendingPath, headEnd: pendingHeadEnd, headDir }
 
     if (arrowPointsAtItself(newArrow, geometry, gridSize)) {
@@ -178,11 +173,15 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
     }
 
     const newArrows = [...arrows, newArrow]
-    const newOccupied = new Set(occupiedEdges)
+    const newOccupiedEdges = new Set(occupiedEdges)
+    const newOccupiedVertices = new Set(occupiedVertices)
     for (let i = 0; i < pendingPath.length - 1; i++) {
-      newOccupied.add(edgeKey(pendingPath[i], pendingPath[i + 1]))
+      newOccupiedEdges.add(edgeKey(pendingPath[i], pendingPath[i + 1]))
     }
-    set({ arrows: newArrows, pendingPath: [], pendingError: null, occupiedEdges: newOccupied })
+    for (let i = 0; i < pendingPath.length; i++) {
+      newOccupiedVertices.add(pendingPath[i])
+    }
+    set({ arrows: newArrows, pendingPath: [], pendingError: null, occupiedEdges: newOccupiedEdges, occupiedVertices: newOccupiedVertices })
   },
 
   cancelPending: () => set({ pendingPath: [], pendingError: null }),
@@ -198,6 +197,7 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
         arrows: newArrows,
         selectedArrowId: state.selectedArrowId === id ? null : state.selectedArrowId,
         occupiedEdges: getOccupiedEdges(newArrows),
+        occupiedVertices: getOccupiedVertices(newArrows),
       }
     }),
 
@@ -223,7 +223,28 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
     const { gridSize, straightness, geometry } = get()
     const arrows = autoGenerateLevel(gridSize, maxPathLen, difficulty, straightness)
     if (arrows.length === 0) return false  // generation failed — keep existing state
+
+    // Diagnostic: check for duplicate vertex indices across arrows
+    const vertOwner = new Map<number, string>()
+    let sharedCount = 0
+    for (const arrow of arrows) {
+      for (const v of arrow.path) {
+        if (vertOwner.has(v)) {
+          console.error(`[TILE SHARING] vertex ${v} in arrow ${arrow.id} already owned by arrow ${vertOwner.get(v)}`)
+          sharedCount++
+        } else {
+          vertOwner.set(v, arrow.id)
+        }
+      }
+    }
+    if (sharedCount === 0) {
+      console.log('[TILE SHARING] OK — no shared vertices across arrows')
+    } else {
+      console.warn(`[TILE SHARING] FOUND ${sharedCount} shared vertex/arrow pairs`)
+    }
+
     const occupiedEdges = getOccupiedEdges(arrows)
+    const occupiedVertices = getOccupiedVertices(arrows)
 
     // Compute turn percentage across all arrows
     let turns = 0, segments = 0
@@ -233,8 +254,8 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
       segments += path.length - 2
       let lastDir: [number, number, number] | null = null
       for (let i = 1; i < path.length; i++) {
-        const [ux, uy, uz] = geometry.gridCoords[path[i - 1]]
-        const [vx, vy, vz] = geometry.gridCoords[path[i]]
+        const [ux, uy, uz] = geometry.vertices[path[i - 1]]
+        const [vx, vy, vz] = geometry.vertices[path[i]]
         const dir: [number, number, number] = [vx - ux, vy - uy, vz - uz]
         if (lastDir && (dir[0] !== lastDir[0] || dir[1] !== lastDir[1] || dir[2] !== lastDir[2])) turns++
         lastDir = dir
@@ -243,23 +264,24 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
     const turnPct = segments > 0 ? Math.round((turns / segments) * 100) : 0
     const levelName = `${gridSize.x}x${gridSize.y}x${gridSize.z}_${difficulty}_${turnPct}%`
 
-    set({ arrows, pendingPath: [], selectedArrowId: null, removedInTest: [], mode: 'test', occupiedEdges, currentLevelName: levelName, currentLevelId: null })
+    set({ arrows, pendingPath: [], selectedArrowId: null, removedInTest: [], mode: 'test', occupiedEdges, occupiedVertices, currentLevelName: levelName, currentLevelId: null })
     return true
   },
 
-  clearAll: () => set({ arrows: [], selectedArrowId: null, pendingPath: [], occupiedEdges: new Set() }),
+  clearAll: () => set({ arrows: [], selectedArrowId: null, pendingPath: [], occupiedEdges: new Set(), occupiedVertices: new Set() }),
 
   importLevel: (level) => {
     const geometry = generateCubeGeometry(level.gridSize.x, level.gridSize.y, level.gridSize.z)
     const occupiedEdges = getOccupiedEdges(level.arrows)
+    const occupiedVertices = getOccupiedVertices(level.arrows)
     // Recompute headDir in case the imported JSON predates the field
     const arrows = level.arrows.map(a => {
       if (a.headDir) return a
       const [tailV, headV] = a.headEnd === 'end'
         ? [a.path[a.path.length - 2], a.path[a.path.length - 1]]
         : [a.path[1], a.path[0]]
-      const [tx, ty, tz] = geometry.gridCoords[tailV]
-      const [hx, hy, hz] = geometry.gridCoords[headV]
+      const [tx, ty, tz] = geometry.vertices[tailV]
+      const [hx, hy, hz] = geometry.vertices[headV]
       return { ...a, headDir: [hx - tx, hy - ty, hz - tz] as [number, number, number] }
     })
     set({
@@ -270,6 +292,7 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
       removedInTest: [],
       geometry,
       occupiedEdges,
+      occupiedVertices,
     })
   },
 
@@ -316,16 +339,18 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
       const [tailV, headV] = a.headEnd === 'end'
         ? [a.path[a.path.length - 2], a.path[a.path.length - 1]]
         : [a.path[1], a.path[0]]
-      const [tx, ty, tz] = geometry.gridCoords[tailV]
-      const [hx, hy, hz] = geometry.gridCoords[headV]
+      const [tx, ty, tz] = geometry.vertices[tailV]
+      const [hx, hy, hz] = geometry.vertices[headV]
       return { ...a, headDir: [hx - tx, hy - ty, hz - tz] as [number, number, number] }
     })
     const occupiedEdges = getOccupiedEdges(arrows)
+    const occupiedVertices = getOccupiedVertices(arrows)
     set({
       gridSize,
       arrows,
       geometry,
       occupiedEdges,
+      occupiedVertices,
       pendingPath: [],
       selectedArrowId: null,
       removedInTest: [],
@@ -365,6 +390,7 @@ export const useLevelStore = create<LevelStore>((set, get) => ({
       arrows: [],
       geometry,
       occupiedEdges: new Set(),
+      occupiedVertices: new Set(),
       pendingPath: [],
       selectedArrowId: null,
       removedInTest: [],

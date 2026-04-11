@@ -401,9 +401,14 @@ namespace EscapeED
 
             foreach (var p in gridPath)
             {
-                worldPoints.Add(grid.transform.TransformPoint(grid.CalculateWorldPos(p.x, p.y, p.z)));
-                allNormals.Add(grid.GetAllFaceNormals(p));
-                dotTypes.Add(grid.GetDotType(p));
+                // FALLBACK: Since procedural logic still uses coords, we find the first matching dot.
+                // In a professional face-centered setup, we should use face-specific indices.
+                int index = grid.GetIndexByCoords(p); 
+                if (index == -1) continue;
+
+                worldPoints.Add(grid.GetWorldPosByIndex(index));
+                allNormals.Add(grid.GetAllFaceNormals(index));
+                dotTypes.Add(grid.GetDotType(index));
             }
 
             arrow.SetPath(worldPoints, allNormals, dotTypes);
