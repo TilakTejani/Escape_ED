@@ -7,6 +7,12 @@ namespace EscapeED
 {
     public class LevelManager : MonoBehaviour
     {
+        public static LevelManager Instance { get; private set; }
+
+        public int ActiveArrowCount => activeArrows.Count;
+        public int CurrentLevel => levelIndex + 1;
+        public event System.Action OnArrowCountChanged;
+
         [Header("Level Data")]
         [Tooltip("Optional: pin a specific level. Leave empty to use the Levels/ folder.")]
         public TextAsset levelJsonFile;
@@ -247,6 +253,13 @@ namespace EscapeED
 
         void Awake()
         {
+            if (Instance != null && Instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+            Instance = this;
+
             navigator       = GetComponent<CubeNavigator>();
         }
 
@@ -289,6 +302,7 @@ namespace EscapeED
                 AudioManager.Instance.PlayArrowSound();
                 arrow.Eject();
                 activeArrows.Remove(arrow.gameObject);
+                OnArrowCountChanged?.Invoke();
 
                 if (activeArrows.Count == 0)
                     OnLevelComplete();

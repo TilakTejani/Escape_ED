@@ -117,13 +117,22 @@ namespace EscapeED.EditorHelper
             // Build the Redesigned Menu Layout
             CreateHomeLayout(homeObj.transform, homeView);
             
-            // 6. Create Settings Panel (Stand-alone popup, not managed by UIManager state)
+            // 6. Create Settings Panel
             SettingsView settingsView = CreateSettingsPanel(canvasObj.transform);
             homeView.settingsView = settingsView;
 
+            // 7. Create In-Game HUD (Level, Hearts, Hint, Arrows)
+            GameObject hudObj = new GameObject("HUDPanel", typeof(RectTransform));
+            hudObj.transform.SetParent(canvasObj.transform, false);
+            var hudRect = hudObj.GetComponent<RectTransform>();
+            hudRect.anchorMin = Vector2.zero; hudRect.anchorMax = Vector2.one; hudRect.sizeDelta = Vector2.zero;
+            
+            GameHUDView hudView = hudObj.AddComponent<GameHUDView>();
+            hudView.targetState = GameState.Playing;
+            CreateGameHUDLayout(hudObj.transform, hudView);
+
             // Link panels to UIManager & FINAL HANDSHAKE
-            // We EXCLUDE settingsView from this list so it doesn't conflict with Init state
-            BaseUIPanel[] allPanels = new BaseUIPanel[] { splashView, homeView };
+            BaseUIPanel[] allPanels = new BaseUIPanel[] { splashView, homeView, hudView };
             uiManager.Initialize(allPanels);
 
             // 7. Ensure AudioManager exists
@@ -916,6 +925,178 @@ namespace EscapeED.EditorHelper
             tex.Apply();
             // Sliced with 30px borders ensures corners look correct for 20px radius
             return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(30, 30, 30, 30));
+        }        private void CreateGameHUDLayout(Transform parent, GameHUDView view)
+        {
+            // Define Precision Colors: Saturated Blue and Cyan from Reference Image
+            Color blueColor; ColorUtility.TryParseHtmlString("#2D5BFF", out blueColor);
+            Color cyanColor; ColorUtility.TryParseHtmlString("#00D9FF", out cyanColor);
+
+            // 1. Settings Gear (ANCHORED INDEPENDENTLY TO LEFT)
+            GameObject gearRoot = new GameObject("SettingsBtn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            gearRoot.transform.SetParent(parent, false);
+            var gearRect = gearRoot.GetComponent<RectTransform>();
+            gearRect.anchorMin = new Vector2(0, 1); gearRect.anchorMax = new Vector2(0, 1);
+            gearRect.pivot = new Vector2(0, 1);
+            gearRect.sizeDelta = new Vector2(75, 75);
+            gearRect.anchoredPosition = new Vector2(50, -225); // Left-side with margin
+            
+            var gearBg = gearRoot.GetComponent<Image>();
+            gearBg.color = Color.clear; 
+            view.settingsButton = gearRoot.GetComponent<Button>();
+
+            GameObject gearIcon = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            gearIcon.transform.SetParent(gearRoot.transform, false);
+            gearIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(50, 50);
+            gearIcon.GetComponent<Image>().sprite = LoadSprite("UI/settings_icon");
+            gearIcon.GetComponent<Image>().color = blueColor;
+
+            // 2. Center Info Stack (ANCHORED INDEPENDENTLY TO CENTER)
+            GameObject masterCenter = new GameObject("MasterCenterStack", typeof(RectTransform), typeof(VerticalLayoutGroup));
+            masterCenter.transform.SetParent(parent, false);
+            var centerRect = masterCenter.GetComponent<RectTransform>();
+            centerRect.anchorMin = new Vector2(0.5f, 1); centerRect.anchorMax = new Vector2(0.5f, 1);
+            centerRect.pivot = new Vector2(0.5f, 1);
+            centerRect.sizeDelta = new Vector2(250, 140);
+            centerRect.anchoredPosition = new Vector2(0, -200);
+
+            var vlg = masterCenter.GetComponent<VerticalLayoutGroup>();
+            vlg.childAlignment = TextAnchor.MiddleCenter; 
+            vlg.spacing = -2;
+            vlg.childControlHeight = true; vlg.childForceExpandHeight = false;
+
+            GameObject lvlObj = CreateText(masterCenter.transform, "Level 0", 44, blueColor, Vector2.zero);
+            lvlObj.GetComponent<Text>().fontStyle = FontStyle.Bold;
+            lvlObj.GetComponent<Text>().horizontalOverflow = HorizontalWrapMode.Overflow;
+            view.levelText = lvlObj.GetComponent<Text>();
+
+            GameObject diffObj = CreateText(masterCenter.transform, "Hard", 20, cyanColor, Vector2.zero);
+            diffObj.GetComponent<Text>().fontStyle = FontStyle.Bold;
+            diffObj.GetComponent<Text>().horizontalOverflow = HorizontalWrapMode.Overflow;
+            view.difficultyText = diffObj.GetComponent<Text>();
+
+            GameObject heartsRoot = new GameObject("HeartsContainer", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            heartsRoot.transform.SetParent(masterCenter.transform, false);
+            heartsRoot.GetComponent<RectTransform>().sizeDelta = new Vector2(110, 35);
+            var hHLG = heartsRoot.GetComponent<HorizontalLayoutGroup>();
+            hHLG.spacing = 6; hHLG.childAlignment = TextAnchor.MiddleCenter;
+            hHLG.childControlWidth = true; hHLG.childForceExpandWidth = false;
+
+            Sprite heartSprite = LoadSprite("UI/heart_icon");
+            view.hearts = new GameObject[3];
+            for (int i = 0; i < 3; i++)
+            {
+                GameObject h = new GameObject("Heart_" + i, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                h.transform.SetParent(heartsRoot.transform, false);
+                h.GetComponent<RectTransform>().sizeDelta = new Vector2(30, 30);
+                h.GetComponent<Image>().sprite = heartSprite;
+                h.GetComponent<Image>().preserveAspect = true;
+                view.hearts[i] = h;
+            }
+
+            // --- SIDE-PILL SPRITE ---
+            Sprite sidePillSprite = GetSidePillSprite();
+
+            // 3. Hint Button (ANCHORED INDEPENDENTLY TO RIGHT & FLUSHED)
+            GameObject hintObj = new GameObject("HintBtn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+            hintObj.transform.SetParent(parent, false); 
+            var hintRect = hintObj.GetComponent<RectTransform>();
+            hintRect.anchorMin = new Vector2(1, 1); hintRect.anchorMax = new Vector2(1, 1);
+            hintRect.pivot = new Vector2(1, 1);
+            hintRect.sizeDelta = new Vector2(260, 85); // WIDER to prevent "Hint" clipping
+            hintRect.anchoredPosition = new Vector2(0, -227); 
+            
+            var hintImg = hintObj.GetComponent<Image>();
+            hintImg.sprite = sidePillSprite;
+            hintImg.type = Image.Type.Sliced;
+            hintImg.color = blueColor;
+            view.hintButton = hintObj.GetComponent<Button>();
+
+            GameObject hintContent = new GameObject("Content", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            hintContent.transform.SetParent(hintObj.transform, false);
+            var contentRect = hintContent.GetComponent<RectTransform>();
+            contentRect.anchorMin = Vector2.zero; contentRect.anchorMax = Vector2.one;
+            contentRect.sizeDelta = Vector2.zero;
+            var hintHLG = hintContent.GetComponent<HorizontalLayoutGroup>();
+            hintHLG.padding = new RectOffset(20, 20, 0, 0); // Explicit internal padding
+            hintHLG.childAlignment = TextAnchor.MiddleCenter; 
+            hintHLG.spacing = 15;
+            hintHLG.childControlWidth = true; hintHLG.childForceExpandWidth = false;
+
+            GameObject hintIcon = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            hintIcon.transform.SetParent(hintContent.transform, false);
+            hintIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(40, 40);
+            hintIcon.GetComponent<Image>().sprite = LoadSprite("UI/hint_icon");
+            hintIcon.GetComponent<Image>().preserveAspect = true;
+
+            GameObject hintTxt = CreateText(hintContent.transform, "Hint", 34, Color.white, Vector2.zero);
+            hintTxt.GetComponent<Text>().fontStyle = FontStyle.Bold;
+            hintTxt.GetComponent<Text>().horizontalOverflow = HorizontalWrapMode.Overflow;
+
+            // 4. Arrow Count Pill (WIDER & STABILIZED)
+            GameObject arrowPill = new GameObject("ArrowCounter", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            arrowPill.transform.SetParent(parent, false);
+            var pillRect = arrowPill.GetComponent<RectTransform>();
+            pillRect.anchorMin = new Vector2(1, 0.5f); pillRect.anchorMax = new Vector2(1, 0.5f);
+            pillRect.pivot = new Vector2(1, 0.5f);
+            pillRect.sizeDelta = new Vector2(240, 85); // WIDER to fix number clipping
+            pillRect.anchoredPosition = new Vector2(0, 320); 
+            
+            var pillImg = arrowPill.GetComponent<Image>();
+            pillImg.sprite = sidePillSprite;
+            pillImg.type = Image.Type.Sliced;
+            pillImg.color = blueColor;
+
+            GameObject arrowContent = new GameObject("Content", typeof(RectTransform), typeof(HorizontalLayoutGroup));
+            arrowContent.transform.SetParent(arrowPill.transform, false);
+            var arrowContentRect = arrowContent.GetComponent<RectTransform>();
+            arrowContentRect.anchorMin = Vector2.zero; arrowContentRect.anchorMax = Vector2.one;
+            arrowContentRect.sizeDelta = Vector2.zero;
+            var arrowHLG = arrowContent.GetComponent<HorizontalLayoutGroup>();
+            arrowHLG.padding = new RectOffset(20, 20, 0, 0); // Explicit internal padding
+            arrowHLG.childAlignment = TextAnchor.MiddleCenter; 
+            arrowHLG.spacing = 15;
+            arrowHLG.childControlWidth = true; arrowHLG.childForceExpandWidth = false;
+
+            GameObject iconObj = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            iconObj.transform.SetParent(arrowContent.transform, false);
+            iconObj.GetComponent<RectTransform>().sizeDelta = new Vector2(45, 45);
+            iconObj.GetComponent<Image>().sprite = LoadSprite("UI/arrow_up_icon");
+            iconObj.GetComponent<Image>().preserveAspect = true;
+
+            GameObject countObj = CreateText(arrowContent.transform, "0", 42, Color.white, Vector2.zero);
+            countObj.GetComponent<Text>().horizontalOverflow = HorizontalWrapMode.Overflow;
+            view.arrowCountText = countObj.GetComponent<Text>();
+            view.arrowCountText.fontStyle = FontStyle.Bold;
+        }
+
+        private Sprite GetSidePillSprite()
+        {
+            int size = 128;
+            float radius = 64.0f;
+            Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[size * size];
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = Mathf.Max(radius - x, 0); // Only left side rounded
+                    float dy = Mathf.Max(radius - y, 0, y - (size - 1 - radius));
+                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    if (dist < radius) pixels[y * size + x] = Color.white;
+                    else pixels[y * size + x] = Color.clear;
+                }
+            }
+            tex.SetPixels(pixels); tex.Apply();
+            return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100, 0, SpriteMeshType.FullRect, new Vector4(64, 5, 5, 5));
+        }
+
+        private Sprite LoadSprite(string path)
+        {
+            Texture2D tex = Resources.Load<Texture2D>(path);
+            if (tex == null) return null;
+            return Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f));
         }
     }
 }
