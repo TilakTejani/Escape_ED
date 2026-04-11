@@ -59,8 +59,7 @@ export function generateCubeGeometry(nx: number, ny: number, nz: number): CubeGe
     }
   }
 
-  // O(V) edge generation: each vertex checks its 6 unit-offset neighbors via posMap.
-  // posMap is already fully populated, so each lookup is O(1).
+  // Pass 1: same-face edges via unit-offset neighbor lookup (O(V))
   const OFFSETS: [number, number, number][] = [
     [1, 0, 0], [-1, 0, 0],
     [0, 1, 0], [0, -1, 0],
@@ -72,6 +71,49 @@ export function generateCubeGeometry(nx: number, ny: number, nz: number): CubeGe
       const [dx, dy, dz] = OFFSETS[o]
       const j = posMap.get(worldKey(x + dx, y + dy, z + dz))
       if (j !== undefined && j > i) addEdge(i, j)
+    }
+  }
+
+  // Pass 2: cross-face edges between border tiles of adjacent faces.
+  // Each vertex is a tile center on exactly one face. Tile centers on
+  // adjacent faces are ~0.707 apart (not 1.0), so pass 1 misses them.
+  // The border tile of face A connects to the border tile of the adjacent
+  // face B that shares the same coordinate along the shared-edge axis.
+  //
+  // Example (3×3×3): front-face top-row tile (x, 1, 1.5) ↔ top-face front-row tile (x, 1.5, 1)
+  const EPS = 0.01
+  for (let i = 0; i < vertices.length; i++) {
+    const [ax, ay, az] = vertices[i]
+    const onPZ = Math.abs(az - Rz) < EPS
+    const onNZ = Math.abs(az + Rz) < EPS
+    const onPY = Math.abs(ay - Ry) < EPS
+    const onNY = Math.abs(ay + Ry) < EPS
+    const onPX = Math.abs(ax - Rx) < EPS
+    const onNX = Math.abs(ax + Rx) < EPS
+
+    if (onPZ || onNZ) {
+      const s = onPZ ? 1 : -1
+      const bz = s * (Rz - 0.5)
+      if (Math.abs(ay - (Ry - 0.5)) < EPS) { const j = posMap.get(worldKey(ax,  Ry, bz)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(ay + (Ry - 0.5)) < EPS) { const j = posMap.get(worldKey(ax, -Ry, bz)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(ax - (Rx - 0.5)) < EPS) { const j = posMap.get(worldKey( Rx, ay, bz)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(ax + (Rx - 0.5)) < EPS) { const j = posMap.get(worldKey(-Rx, ay, bz)); if (j !== undefined) addEdge(i, j) }
+    }
+    if (onPY || onNY) {
+      const s = onPY ? 1 : -1
+      const by = s * (Ry - 0.5)
+      if (Math.abs(az - (Rz - 0.5)) < EPS) { const j = posMap.get(worldKey(ax, by,  Rz)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(az + (Rz - 0.5)) < EPS) { const j = posMap.get(worldKey(ax, by, -Rz)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(ax - (Rx - 0.5)) < EPS) { const j = posMap.get(worldKey( Rx, by, az)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(ax + (Rx - 0.5)) < EPS) { const j = posMap.get(worldKey(-Rx, by, az)); if (j !== undefined) addEdge(i, j) }
+    }
+    if (onPX || onNX) {
+      const s = onPX ? 1 : -1
+      const bx = s * (Rx - 0.5)
+      if (Math.abs(ay - (Ry - 0.5)) < EPS) { const j = posMap.get(worldKey(bx,  Ry, az)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(ay + (Ry - 0.5)) < EPS) { const j = posMap.get(worldKey(bx, -Ry, az)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(az - (Rz - 0.5)) < EPS) { const j = posMap.get(worldKey(bx, ay,  Rz)); if (j !== undefined) addEdge(i, j) }
+      if (Math.abs(az + (Rz - 0.5)) < EPS) { const j = posMap.get(worldKey(bx, ay, -Rz)); if (j !== undefined) addEdge(i, j) }
     }
   }
 
