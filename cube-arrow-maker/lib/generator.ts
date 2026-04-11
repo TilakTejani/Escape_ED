@@ -2,6 +2,7 @@ import { Arrow, GridSize, Difficulty, CubeGeometry } from '@/types'
 import { generateCubeGeometry, getExitDirection, exitPathVertices, arrowPointsAtItself, edgeKey } from './cube'
 import { v4 as uuid } from 'uuid'
 
+
 // ─── Difficulty config ────────────────────────────────────────────────────────
 
 interface DifficultyConfig {
@@ -11,9 +12,9 @@ interface DifficultyConfig {
 }
 
 const DIFFICULTY_CONFIG: Record<Difficulty, DifficultyConfig> = {
-  easy:   { facePenalty: 8,   preferredMaxTraj: 1,   preferLong: false },
-  medium: { facePenalty: 2,   preferredMaxTraj: 3,   preferLong: false },
-  hard:   { facePenalty: 0,   preferredMaxTraj: 999, preferLong: true  },
+  easy: { facePenalty: 8, preferredMaxTraj: 1, preferLong: false },
+  medium: { facePenalty: 2, preferredMaxTraj: 3, preferLong: false },
+  hard: { facePenalty: 0, preferredMaxTraj: 999, preferLong: true },
 }
 
 // ─── Face masks (1 bit per face; each tile center is on exactly one face) ─────
@@ -75,12 +76,12 @@ function buildPaths(
     return best
   }
 
-  function scoreStep(nb: number, pathMask: number, lastDir: [number,number,number] | null, curV: number): number {
+  function scoreStep(nb: number, pathMask: number, lastDir: [number, number, number] | null, curV: number): number {
     const newFaces = popcount(faceMasks[nb] & ~pathMask)
     let score = freeDeg[nb] + newFaces * config.facePenalty * 0.5 + Math.random() * 3.0
     if (lastDir) {
       const [cx, cy, cz] = vertices[curV], [nx, ny, nz] = vertices[nb]
-      const dot = lastDir[0]*(nx-cx) + lastDir[1]*(ny-cy) + lastDir[2]*(nz-cz)
+      const dot = lastDir[0] * (nx - cx) + lastDir[1] * (ny - cy) + lastDir[2] * (nz - cz)
       if (dot > 0.5) score -= (straightness - 0.5) * 6
     }
     return score
@@ -120,7 +121,7 @@ function buildPaths(
       if (!visited[nb] && freeDeg[nb] === 0) rescueVertex(nb)
     }
 
-    let lastDir: [number,number,number] | null = null
+    let lastDir: [number, number, number] | null = null
     let curV = start
 
     while (path.length < maxLen) {
@@ -134,7 +135,7 @@ function buildPaths(
       }
 
       const [cx, cy, cz] = vertices[curV], [bx, by, bz] = vertices[best]
-      lastDir = [bx-cx, by-cy, bz-cz]
+      lastDir = [bx - cx, by - cy, bz - cz]
       pathMask |= faceMasks[best]
       path.push(best)
       markVisited(best)
@@ -182,7 +183,7 @@ function assignExits(
 ): Arrow[] | null {
   const exitInfos: [ExitInfo, ExitInfo][] = paths.map(p => [
     computeExitInfo(p, 'start', geometry, gridSize),
-    computeExitInfo(p, 'end',   geometry, gridSize),
+    computeExitInfo(p, 'end', geometry, gridSize),
   ])
 
   // Sort by min valid trajectory length (most constrained first)
@@ -219,7 +220,7 @@ function assignExits(
     if (!chosen) chosen = candidates[0]  // fallback: ignore cross-arrow blocking
 
     for (const v of path) placedVerts.add(v)
-    for (let i = 0; i < path.length - 1; i++) placedEdges.add(edgeKey(path[i], path[i+1]))
+    for (let i = 0; i < path.length - 1; i++) placedEdges.add(edgeKey(path[i], path[i + 1]))
 
     result.push({
       id: uuid(),
